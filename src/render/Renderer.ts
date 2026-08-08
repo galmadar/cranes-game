@@ -6,74 +6,115 @@
  */
 
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { getVehicle } from '../content/vehicles/registry';
 import type { World } from '../sim/World';
+import { ChaseCamera } from './ChaseCamera';
 import { TerrainMesh } from './TerrainMesh';
+import { VehicleView } from './VehicleView';
 
 const SKY = 0x121820;
+/** Half-extent of the sun's shadow frustum, in metres. */
+const SHADOW_SPAN = 34;
 
 export class Renderer {
   readonly scene: THREE.Scene;
-  readonly camera: THREE.PerspectiveCamera;
-  readonly controls: OrbitControls;
+  readonly chase: ChaseCamera;
 
   private readonly renderer: THREE.WebGLRenderer;
   private readonly terrainMesh: TerrainMesh;
+  private readonly vehicleViews = new Map<number, VehicleView>();
+  private readonly sun: THREE.DirectionalLight;
   private readonly container: HTMLElement;
   private readonly resizeObserver: ResizeObserver;
 
   constructor(container: HTMLElement, world: World) {
     this.container = container;
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      powerPreference: 'high-performance',
+    });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(SKY);
     this.scene.fog = new THREE.FogExp2(SKY, 0.0042);
 
-    this.camera = new THREE.PerspectiveCamera(58, 1, 0.5, 2000);
-    this.camera.position.set(34, 26, 42);
-
     // Low sun angle: hillshading is what makes elevation legible (FR-1.3),
     // and it is doing most of the work here since there are no textures yet.
-    const sun = new THREE.DirectionalLight(0xfff0d8, 2.4);
-    sun.position.set(-70, 52, 38);
-    this.scene.add(sun);
+    this.sun = new THREE.DirectionalLight(0xfff0d8, 2.4);
+    this.sun.castShadow = true;
+    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.camera.near = 1;
+    this.sun.shadow.camera.far = 220;
+    this.sun.shadow.camera.left = -SHADOW_SPAN;
+    this.sun.shadow.camera.right = SHADOW_SPAN;
+    this.sun.shadow.camera.top = SHADOW_SPAN;
+    this.sun.shadow.camera.bottom = -SHADOW_SPAN;
+    this.sun.shadow.bias = -0.0008;
+    this.sun.shadow.normalBias = 0.04;
+    this.scene.add(this.sun);
+    this.scene.add(this.sun.target);
     this.scene.add(new THREE.HemisphereLight(0x9fc4ff, 0x40382a, 0.85));
 
     this.terrainMesh = new TerrainMesh(world.terrain);
     this.scene.add(this.terrainMesh.object);
 
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.target.set(0, 0, 0);
-    this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.08;
-    this.controls.minDistance = 6;
-    this.controls.maxDistance = 280;
-    this.controls.maxPolarAngle = Math.PI * 0.49; // never look from underground
-    this.controls.update();
+    world.vehicles.forEach((vehicle, index) => {
+      const entry = getVehicle(vehicle.def.id);
+      const view = new VehicleView(vehicle.def, entry.view);
+      view.sync(vehicle.state);
+      this.vehicleViews.set(index, view);
+      this.scene.add(view.object);
+    });
+
+    this.chase = new ChaseCamera(this.renderer.domElement);
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
     this.resize();
   }
 
-  /** Pull any pending simulation changes into the scene graph. */
+  /** Pull pending simulation changes into the scene graph. */
   sync(world: World): void {
     this.terrainMesh.sync(world.terrain);
+
+    world.vehicles.forEach((vehicle, index) => {
+      this.vehicleViews.get(index)?.sync(vehicle.state);
+    });
+
+    // Keep the shadow frustum tight around the action rather than the whole
+    // 128m yard — a fixed map-wide frustum would waste the entire shadow map.
+    const focus = world.activeVehicle?.state.position;
+    if (focus) {
+      this.sun.target.position.set(focus.x, focus.y, focus.z);
+      this.sun.position.set(focus.x - 58, focus.y + 62, focus.z + 34);
+      this.sun.target.updateMatrixWorld();
+    }
   }
 
   /**
-   * `alpha` is the fraction of a sim step already elapsed — M2 uses it to
-   * interpolate vehicle pose so motion stays smooth above 60fps (NFR-2).
+   * `alpha` is the fraction of a sim step already elapsed. Camera easing is
+   * frame-rate independent, so it consumes real frame time rather than alpha;
+   * `alpha` becomes useful when vehicle pose interpolation lands in M4.
    */
-  render(_alpha: number): void {
-    this.controls.update();
-    this.renderer.render(this.scene, this.camera);
+  render(world: World, frameDt: number, _alpha: number): void {
+    const active = world.activeVehicle;
+    if (active) {
+      this.chase.update(
+        frameDt,
+        active.state.position,
+        active.state.heading,
+        active.state.speed,
+        (x, z) => world.terrain.sampleHeight(x, z),
+      );
+    }
+    this.renderer.render(this.scene, this.chase.camera);
   }
 
   get info(): { calls: number; triangles: number } {
@@ -85,14 +126,14 @@ export class Renderer {
     const w = this.container.clientWidth || window.innerWidth;
     const h = this.container.clientHeight || window.innerHeight;
     this.renderer.setSize(w, h, false);
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
+    this.chase.setAspect(w / h);
   }
 
   dispose(): void {
     this.resizeObserver.disconnect();
-    this.controls.dispose();
+    this.chase.dispose();
     this.terrainMesh.dispose();
+    this.vehicleViews.forEach((v) => v.dispose());
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }

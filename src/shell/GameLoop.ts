@@ -13,7 +13,12 @@ export interface GameLoopOptions {
   /** Upper bound on a single frame's dt, so a backgrounded tab can't spiral. */
   maxFrameTime?: number;
   update: (dt: number) => void;
-  render: (alpha: number) => void;
+  /**
+   * `alpha` is the leftover fraction of a sim step (for pose interpolation).
+   * `frameDt` is real elapsed seconds — what frame-rate-independent easing
+   * like the chase camera needs, which is NOT the same thing.
+   */
+  render: (alpha: number, frameDt: number) => void;
 }
 
 export class GameLoop {
@@ -21,7 +26,7 @@ export class GameLoop {
 
   private readonly maxFrameTime: number;
   private readonly update: (dt: number) => void;
-  private readonly renderFn: (alpha: number) => void;
+  private readonly renderFn: (alpha: number, frameDt: number) => void;
 
   private rafId = 0;
   private lastTime = 0;
@@ -74,7 +79,8 @@ export class GameLoop {
     this.smoothedFrameMs += (rawMs - this.smoothedFrameMs) * 0.1;
 
     // Clamp before accumulating: after a tab-out, `rawMs` can be minutes.
-    this.accumulator += Math.min(rawMs / 1000, this.maxFrameTime);
+    const frameDt = Math.min(rawMs / 1000, this.maxFrameTime);
+    this.accumulator += frameDt;
 
     this.stepsThisFrame = 0;
     while (this.accumulator >= this.step) {
@@ -83,6 +89,6 @@ export class GameLoop {
       this.stepsThisFrame++;
     }
 
-    this.renderFn(this.accumulator / this.step);
+    this.renderFn(this.accumulator / this.step, frameDt);
   };
 }

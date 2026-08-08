@@ -1,22 +1,31 @@
 /**
- * Diagnostic HUD.
+ * Diagnostic HUD + on-screen control hints (FR-4.3).
  *
- * Terrain volume is on screen from day one on purpose: it is the invariant
- * FR-3.5 is built around, and in M3 you want to watch it hold steady while you
- * push dirt, not discover it drifting three days later.
+ * Control hints are GENERATED from the active vehicle's keymap, never
+ * hard-coded. A machine with a different keymap documents itself.
+ *
+ * Terrain volume is on screen on purpose: it is the invariant FR-3.5 is built
+ * around, and in M3 you want to watch it hold steady while you push dirt, not
+ * discover it drifting three days later.
  */
 
+import { keyLabel } from '../input/Keyboard';
+import type { KeyMap } from '../sim/input/actions';
 import { MATERIAL_LIST } from '../sim/materials';
 
 export interface HudStats {
   fps: number;
   frameMs: number;
-  steps: number;
   simTime: number;
-  cells: number;
   volume: number;
   drawCalls: number;
   triangles: number;
+
+  vehicleName: string;
+  speedKph: number;
+  groundMaterial: string;
+  traction: number;
+  bladeHeight: number | null;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -31,11 +40,13 @@ function el<K extends keyof HTMLElementTagNameMap>(
 }
 
 const ROWS = [
+  ['speed', 'Speed'],
+  ['ground', 'Ground'],
+  ['traction', 'Traction'],
+  ['blade', 'Blade'],
   ['fps', 'FPS'],
   ['frame', 'Frame'],
-  ['steps', 'Sim steps'],
   ['time', 'Sim time'],
-  ['cells', 'Cells'],
   ['volume', 'Volume'],
   ['draws', 'Draw calls'],
   ['tris', 'Triangles'],
@@ -43,14 +54,18 @@ const ROWS = [
 
 export class Hud {
   private readonly values = new Map<string, HTMLElement>();
-  private readonly root: HTMLElement;
-  private readonly legend: HTMLElement;
-  private readonly help: HTMLElement;
+  private readonly title: HTMLElement;
 
-  constructor(parent: HTMLElement) {
-    this.root = el('div', 'hud');
-    this.root.id = 'hud-stats';
-    this.root.appendChild(el('h2', undefined, 'Cranes Game &middot; M1'));
+  constructor(
+    parent: HTMLElement,
+    keymap: KeyMap,
+    hints: readonly { action: string; label: string }[],
+  ) {
+    // --- stats ---------------------------------------------------------------
+    const stats = el('div', 'hud');
+    stats.id = 'hud-stats';
+    this.title = el('h2', undefined, 'Cranes Game &middot; M2');
+    stats.appendChild(this.title);
 
     const dl = el('dl');
     for (const [key, label] of ROWS) {
@@ -59,15 +74,16 @@ export class Hud {
       this.values.set(key, dd);
       dl.appendChild(dd);
     }
-    this.root.appendChild(dl);
+    stats.appendChild(dl);
 
-    this.legend = el('div', 'hud');
-    this.legend.id = 'hud-legend';
-    this.legend.appendChild(el('h2', undefined, 'Materials'));
+    // --- material legend ------------------------------------------------------
+    const legend = el('div', 'hud');
+    legend.id = 'hud-legend';
+    legend.appendChild(el('h2', undefined, 'Materials'));
     for (const m of MATERIAL_LIST) {
       const rgb = m.color.map((c) => Math.round(c * 255)).join(',');
-      const tag = m.diggable ? 'diggable' : 'solid';
-      this.legend.appendChild(
+      const tag = m.diggable ? `diggable · ×${m.tractionMultiplier}` : 'solid';
+      legend.appendChild(
         el(
           'div',
           'legend-row',
@@ -77,29 +93,40 @@ export class Hud {
       );
     }
 
-    this.help = el('div', 'hud');
-    this.help.id = 'hud-help';
-    this.help.appendChild(el('h2', undefined, 'Camera'));
-    this.help.appendChild(
+    // --- controls, generated from the keymap ---------------------------------
+    const help = el('div', 'hud');
+    help.id = 'hud-help';
+    help.appendChild(el('h2', undefined, 'Controls'));
+    for (const hint of hints) {
+      const codes = keymap[hint.action] ?? [];
+      const keys = codes.map((c) => `<kbd>${keyLabel(c)}</kbd>`).join(' / ');
+      help.appendChild(el('div', 'legend-row', `${keys} <span class="tag">${hint.label}</span>`));
+    }
+    help.appendChild(
       el(
         'div',
-        undefined,
-        '<kbd>drag</kbd> orbit &nbsp; <kbd>wheel</kbd> zoom &nbsp; <kbd>right-drag</kbd> pan',
+        'legend-row',
+        '<kbd>drag</kbd> <span class="tag">orbit</span> ' +
+          '<kbd>wheel</kbd> <span class="tag">zoom</span> ' +
+          '<kbd>C</kbd> <span class="tag">recenter</span>',
       ),
     );
-    this.help.appendChild(
-      el('div', undefined, '<span style="color:var(--hud-dim)">Driving arrives in M2.</span>'),
+    help.appendChild(
+      el('div', undefined, '<span class="tag">Digging arrives in M3.</span>'),
     );
 
-    parent.append(this.root, this.legend, this.help);
+    parent.append(stats, legend, help);
   }
 
   update(stats: HudStats): void {
+    this.title.innerHTML = `${stats.vehicleName} &middot; M2`;
+    this.set('speed', `${stats.speedKph.toFixed(1)} km/h`);
+    this.set('ground', stats.groundMaterial);
+    this.set('traction', `×${stats.traction.toFixed(2)}`);
+    this.set('blade', stats.bladeHeight === null ? '—' : `${stats.bladeHeight.toFixed(2)} m`);
     this.set('fps', stats.fps.toFixed(0));
     this.set('frame', `${stats.frameMs.toFixed(1)} ms`);
-    this.set('steps', stats.steps.toLocaleString());
     this.set('time', `${stats.simTime.toFixed(1)} s`);
-    this.set('cells', stats.cells.toLocaleString());
     this.set('volume', `${stats.volume.toFixed(1)} m³`);
     this.set('draws', String(stats.drawCalls));
     this.set('tris', stats.triangles.toLocaleString());
