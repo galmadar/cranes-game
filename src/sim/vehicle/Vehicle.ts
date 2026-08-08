@@ -16,6 +16,11 @@ import type { ImplementSpec, VehicleDefinition, VehicleState } from './types';
 /** Keeps the machine clear of the perimeter berm rather than climbing it. */
 const EDGE_MARGIN = 16;
 
+/** Below this ground speed the tracks are not laying a mark. */
+const TRACK_MARK_MIN_SPEED = 0.05;
+/** How churned tracks leave the ground behind them, 0..255. */
+const TRACK_MARK_STRENGTH = 190;
+
 function moveToward(current: number, target: number, maxDelta: number): number {
   const diff = target - current;
   if (Math.abs(diff) <= maxDelta) return target;
@@ -177,6 +182,38 @@ export class Vehicle {
 
     s.pitch = -Math.atan(dhdx * fx + dhdz * fz); // nose up when climbing
     s.roll = -Math.atan(dhdx * rx + dhdz * rz);
+
+    this.layTrackMarks(terrain, fx, fz, rx, rz);
+  }
+
+  /**
+   * Churn the ground under the tracks.
+   *
+   * Marks are a SURFACE property, not a height change: pressing the terrain
+   * down under the tracks would look plausible and quietly destroy volume,
+   * which is the one thing FR-3.5 does not allow. Rock does not scuff.
+   */
+  private layTrackMarks(terrain: Terrain, fx: number, fz: number, rx: number, rz: number): void {
+    const s = this.state;
+    if (Math.abs(s.speed) < TRACK_MARK_MIN_SPEED) return;
+
+    const halfTrack = this.def.dimensions.width / 2 - 0.45;
+    const halfLength = this.def.dimensions.length / 2;
+
+    for (const side of [-1, 1]) {
+      const baseX = s.position.x + rx * side * halfTrack;
+      const baseZ = s.position.z + rz * side * halfTrack;
+      // Two samples per track so a fast machine cannot skip over cells
+      // between steps and leave a dotted line.
+      for (const along of [-halfLength * 0.5, halfLength * 0.5]) {
+        terrain.disturbAround(
+          baseX + fx * along,
+          baseZ + fz * along,
+          terrain.cellSize * 1.1,
+          TRACK_MARK_STRENGTH,
+        );
+      }
+    }
   }
 }
 

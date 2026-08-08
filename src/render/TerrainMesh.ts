@@ -153,9 +153,25 @@ export class TerrainMesh {
 
         const p = terrain.material[i] * 3;
         const jitter = 0.94 + 0.12 * hashUnit(cx, cz);
-        colors[o + 0] = this.palette[p + 0] * jitter;
-        colors[o + 1] = this.palette[p + 1] * jitter;
-        colors[o + 2] = this.palette[p + 2] * jitter;
+
+        let r = this.palette[p + 0] * jitter;
+        let g = this.palette[p + 1] * jitter;
+        let b = this.palette[p + 2] * jitter;
+
+        // Churned ground goes darker and loses saturation — turned earth reads
+        // damp. This is what makes track marks and fresh cuts visible.
+        const churn = terrain.disturbance[i] / 255;
+        if (churn > 0) {
+          const grey = (r + g + b) / 3;
+          const k = churn * 0.55;
+          r = (r + (grey - r) * 0.45) * (1 - k * 0.55);
+          g = (g + (grey - g) * 0.45) * (1 - k * 0.55);
+          b = (b + (grey - b) * 0.45) * (1 - k * 0.5);
+        }
+
+        colors[o + 0] = r;
+        colors[o + 1] = g;
+        colors[o + 2] = b;
       }
     }
 

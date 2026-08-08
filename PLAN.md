@@ -6,7 +6,9 @@ MVP: drive a bulldozer around a map and push dirt into piles.
 > **Status:** M0–M3 complete — **the MVP works.** `npm run dev` → drive the
 > bulldozer, drop the blade, and push dirt into piles. Volume is conserved,
 > piles slump to the angle of repose, rock refuses the cut.
-> Next up is **M4 — feel**: tuning the numbers until it is fun.
+> M4 visuals are in: track marks, dust, gradient sky. Feel numbers are
+> deliberately untouched. Next up is **M5 — the architecture test**: add an
+> excavator without changing any engine code.
 
 ---
 
@@ -257,7 +259,7 @@ Vite · TypeScript (strict) · Three.js · Vitest. No physics engine, no backend
 | ~~**M1**~~ ✅ | Terrain: heightmap + material grid, procedural sandbox map (flat ground, a sand pit, a mud patch, a rock outcrop), vertex-coloured shaded mesh, dirty-rect updates wired but unused. | 1 day |
 | ~~**M2**~~ ✅ | Driving: dozer as primitive boxes, tank steering, terrain-conforming Y/pitch/roll, chase camera, keys routed through the action layer. *Do not shortcut the action layer* — it is FR-5. | 1 day |
 | ~~**M3**~~ ✅ | **← THE MVP.** Blade raise/lower. Scrape → carry → deposit. Slumping. Rock refuses. Mud slows. Volume-conservation test green. | 2–3 days |
-| **M4** | Feel: tune capacity, cut rate, angle of repose, blade speed. Track marks and dust. This is what separates a game from a tech demo — do not skip it. | 1 day |
+| ~~**M4**~~ ◐ | Feel: tune capacity, cut rate, angle of repose, blade speed. Track marks and dust. This is what separates a game from a tech demo — do not skip it. | 1 day |
 | **M5** | **Architecture validation:** add an excavator *without touching `sim/` engine code*. If that's impossible, the registry design has failed — fix it now, with two vehicles, not with six. | 1–2 days |
 | **M6+** | Cranes: introduce Rapier for cable + suspended load only. Boom/hook/outrigger implements. Map and vehicle select screens. | — |
 

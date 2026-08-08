@@ -9,10 +9,11 @@ import * as THREE from 'three';
 import { getVehicle } from '../content/vehicles/registry';
 import type { World } from '../sim/World';
 import { ChaseCamera } from './ChaseCamera';
+import { DustSystem } from './DustSystem';
+import { SkyDome } from './SkyDome';
 import { TerrainMesh } from './TerrainMesh';
 import { VehicleView } from './VehicleView';
 
-const SKY = 0x121820;
 /** Half-extent of the sun's shadow frustum, in metres. */
 const SHADOW_SPAN = 34;
 
@@ -24,6 +25,8 @@ export class Renderer {
   private readonly terrainMesh: TerrainMesh;
   private readonly vehicleViews = new Map<number, VehicleView>();
   private readonly sun: THREE.DirectionalLight;
+  private readonly sky: SkyDome;
+  private readonly dust: DustSystem;
   private readonly container: HTMLElement;
   private readonly resizeObserver: ResizeObserver;
 
@@ -42,8 +45,11 @@ export class Renderer {
     container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(SKY);
-    this.scene.fog = new THREE.FogExp2(SKY, 0.0042);
+    this.sky = new SkyDome();
+    this.scene.add(this.sky.object);
+    // Fog matched to the horizon band, so distant terrain dissolves into the
+    // sky instead of into an unrelated colour.
+    this.scene.fog = new THREE.FogExp2(this.sky.horizonColor.getHex(), 0.0075);
 
     // Low sun angle: hillshading is what makes elevation legible (FR-1.3),
     // and it is doing most of the work here since there are no textures yet.
@@ -64,6 +70,9 @@ export class Renderer {
 
     this.terrainMesh = new TerrainMesh(world.terrain);
     this.scene.add(this.terrainMesh.object);
+
+    this.dust = new DustSystem();
+    this.scene.add(this.dust.object);
 
     world.vehicles.forEach((vehicle, index) => {
       const entry = getVehicle(vehicle.def.id);
@@ -109,7 +118,26 @@ export class Renderer {
       this.chase.update(frameDt, active.state.position, active.state.heading, (x, z) =>
         world.terrain.sampleHeight(x, z),
       );
+
+      const blade = Object.values(active.state.implementStates).find((s) => s.kind === 'blade');
+      const pos = active.state.position;
+      this.dust.update(
+        frameDt,
+        blade ? blade.cutRate : 0,
+        blade
+          ? {
+              x: pos.x + Math.sin(active.state.heading) * 3,
+              y: pos.y + blade.height,
+              z: pos.z + Math.cos(active.state.heading) * 3,
+            }
+          : null,
+        active.state.heading,
+      );
+    } else {
+      this.dust.update(frameDt, 0, null, 0);
     }
+
+    this.sky.follow(this.chase.camera);
     this.renderer.render(this.scene, this.chase.camera);
   }
 
@@ -129,6 +157,8 @@ export class Renderer {
     this.resizeObserver.disconnect();
     this.chase.dispose();
     this.terrainMesh.dispose();
+    this.sky.dispose();
+    this.dust.dispose();
     this.vehicleViews.forEach((v) => v.dispose());
     this.renderer.dispose();
     this.renderer.domElement.remove();

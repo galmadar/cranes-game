@@ -197,7 +197,9 @@ function fillLowestFirst(
     // across topsoil leaves a sand trail. Rock is never painted over.
     for (let j = 0; j < k && j < sorted.length; j++) {
       const cell = sorted[j];
-      if (materialOf(terrain.material[cell]).diggable) terrain.material[cell] = paint;
+      if (!materialOf(terrain.material[cell]).diggable) continue;
+      terrain.material[cell] = paint;
+      terrain.disturbance[cell] = 255; // spoil is loose, freshly turned earth
     }
   }
 
@@ -290,6 +292,7 @@ export function applyBladeCut(params: BladeCutParams): BladeCutResult {
     // bank. What is left standing is a steep face, which slump then collapses.
     const depth = Math.min(h - edgeY, params.bladeHeight);
     terrain.height[i] = h - depth;
+    terrain.disturbance[i] = 255; // freshly cut ground is as churned as it gets
     volumeCut += depth * terrain.cellArea;
     cutByMaterial.set(material.id, (cutByMaterial.get(material.id) ?? 0) + depth);
   }

@@ -36,6 +36,17 @@ export class Terrain {
   readonly height: Float32Array;
   readonly material: Uint8Array;
 
+  /**
+   * How churned-up each cell's surface is, 0..255. Purely a surface property —
+   * it carries no soil and so cannot affect volume conservation.
+   *
+   * This is what track marks and freshly-dug ground are made of. Doing it as a
+   * height change instead would look right and be wrong: compacting soil under
+   * the tracks would quietly destroy volume, and FR-3.5 is the one invariant
+   * this whole simulation is built around.
+   */
+  readonly disturbance: Uint8Array;
+
   readonly originX: number;
   readonly originZ: number;
 
@@ -72,6 +83,7 @@ export class Terrain {
       this.height = new Float32Array(count);
       this.material = new Uint8Array(count).fill(MaterialId.GRASS);
     }
+    this.disturbance = new Uint8Array(count);
 
     this.originX = -((width - 1) * cellSize) / 2;
     this.originZ = -((depth - 1) * cellSize) / 2;
@@ -155,6 +167,42 @@ export class Terrain {
     if (!this.inBounds(cx, cz)) return;
     this.material[this.index(cx, cz)] = material;
     this.markDirty(cx, cz, cx, cz);
+  }
+
+  /**
+   * Raise a cell's disturbance to at least `value` (0..255). Never lowers it —
+   * ground does not un-churn.
+   *
+   * Only dirties the terrain when the value actually changed, so a machine
+   * grinding over ground it has already torn up does not re-upload geometry
+   * every frame.
+   */
+  disturb(cx: number, cz: number, value: number): void {
+    if (!this.inBounds(cx, cz)) return;
+    const i = this.index(cx, cz);
+    const next = value > 255 ? 255 : value < 0 ? 0 : value | 0;
+    if (next <= this.disturbance[i]) return;
+    this.disturbance[i] = next;
+    this.markDirty(cx, cz, cx, cz);
+  }
+
+  /** Disturb every cell within `radius` world units of a point. */
+  disturbAround(x: number, z: number, radius: number, value: number): void {
+    const r = Math.max(radius, this.cellSize * 0.5);
+    const cx0 = Math.floor(this.worldToCellX(x - r));
+    const cx1 = Math.ceil(this.worldToCellX(x + r));
+    const cz0 = Math.floor(this.worldToCellZ(z - r));
+    const cz1 = Math.ceil(this.worldToCellZ(z + r));
+    const r2 = r * r;
+
+    for (let cz = cz0; cz <= cz1; cz++) {
+      const dz = this.cellToWorldZ(cz) - z;
+      for (let cx = cx0; cx <= cx1; cx++) {
+        const dx = this.cellToWorldX(cx) - x;
+        if (dx * dx + dz * dz > r2) continue;
+        this.disturb(cx, cz, value);
+      }
+    }
   }
 
   // ---------------------------------------------------------------- sampling
