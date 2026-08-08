@@ -106,12 +106,8 @@ export class Renderer {
   render(world: World, frameDt: number, _alpha: number): void {
     const active = world.activeVehicle;
     if (active) {
-      this.chase.update(
-        frameDt,
-        active.state.position,
-        active.state.heading,
-        active.state.speed,
-        (x, z) => world.terrain.sampleHeight(x, z),
+      this.chase.update(frameDt, active.state.position, active.state.heading, (x, z) =>
+        world.terrain.sampleHeight(x, z),
       );
     }
     this.renderer.render(this.scene, this.chase.camera);

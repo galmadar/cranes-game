@@ -2,8 +2,17 @@
  * ChaseCamera — follows the active machine (FR-6.1).
  *
  * Replaces OrbitControls: orbiting a fixed origin is wrong once something is
- * driving around. Drag orbits *around the vehicle*, wheel zooms, and the view
- * eases back behind the machine on its own once you're moving and have let go.
+ * driving around.
+ *
+ * The angle you choose is the angle you keep. Racing games swing the camera
+ * back behind the car automatically, and that instinct is wrong for this game:
+ * here you are watching a machine do work, and the whole point of orbiting to
+ * a side view is to watch the blade move soil from that side. A camera that
+ * creeps back to centre fights the player every time they line up a shot.
+ *
+ * The offset is held relative to the machine's HEADING, not to the world, so
+ * a side view stays a side view when the dozer turns. `recenter()` (C) eases
+ * back behind, and is the only thing that ever moves the angle on its own.
  */
 
 import * as THREE from 'three';
@@ -18,8 +27,15 @@ const MIN_PITCH = 0.06;
 const MAX_PITCH = 1.35;
 const MIN_DISTANCE = 6;
 const MAX_DISTANCE = 90;
-/** Grace period after a drag before the camera starts swinging back. */
-const REALIGN_DELAY = 0.7;
+/** How briskly `recenter()` swings back behind the machine. */
+const RECENTER_RATE = 7;
+
+/** Wrap to (-pi, pi] so recentring always takes the short way round. */
+function wrapPi(a: number): number {
+  const twoPi = Math.PI * 2;
+  let r = ((a + Math.PI) % twoPi + twoPi) % twoPi;
+  return r - Math.PI;
+}
 
 export class ChaseCamera {
   readonly camera: THREE.PerspectiveCamera;
@@ -34,7 +50,7 @@ export class ChaseCamera {
   private dragging = false;
   private lastX = 0;
   private lastY = 0;
-  private sinceDrag = REALIGN_DELAY;
+  private recentering = false;
   private initialised = false;
 
   constructor(domElement: HTMLElement, aspect = 1) {
@@ -49,25 +65,23 @@ export class ChaseCamera {
     domElement.addEventListener('contextmenu', this.onContextMenu);
   }
 
-  /** Snap straight behind the machine, no easing. */
+  /** Ease back behind the machine. The only thing that moves the angle on its own. */
   recenter(): void {
-    this.yawOffset = 0;
-    this.sinceDrag = REALIGN_DELAY;
+    this.recentering = true;
   }
 
   update(
     dt: number,
     position: Vec3,
     heading: number,
-    speed: number,
     groundHeightAt: (x: number, z: number) => number,
   ): void {
-    this.sinceDrag += dt;
-
-    // Ease back behind the machine, but only while it's actually moving and
-    // the player isn't steering the camera themselves.
-    if (!this.dragging && this.sinceDrag > REALIGN_DELAY && Math.abs(speed) > 0.4) {
-      this.yawOffset = damp(this.yawOffset, 0, 1.6, dt);
+    if (this.recentering) {
+      this.yawOffset = damp(this.yawOffset, 0, RECENTER_RATE, dt);
+      if (Math.abs(this.yawOffset) < 0.002) {
+        this.yawOffset = 0;
+        this.recentering = false;
+      }
     }
 
     // Look slightly above the origin — at the cab, not the tracks.
@@ -117,6 +131,8 @@ export class ChaseCamera {
 
   private readonly onPointerDown = (event: PointerEvent): void => {
     this.dragging = true;
+    // Taking hold of the camera cancels an in-flight recentre.
+    this.recentering = false;
     this.lastX = event.clientX;
     this.lastY = event.clientY;
     this.domElement.setPointerCapture(event.pointerId);
@@ -129,14 +145,13 @@ export class ChaseCamera {
     this.lastX = event.clientX;
     this.lastY = event.clientY;
 
-    this.yawOffset -= dx * 0.006;
+    this.yawOffset = wrapPi(this.yawOffset - dx * 0.006);
     this.pitch = Math.min(MAX_PITCH, Math.max(MIN_PITCH, this.pitch + dy * 0.005));
   };
 
   private readonly onPointerUp = (event: PointerEvent): void => {
     if (!this.dragging) return;
     this.dragging = false;
-    this.sinceDrag = 0;
     if (this.domElement.hasPointerCapture(event.pointerId)) {
       this.domElement.releasePointerCapture(event.pointerId);
     }

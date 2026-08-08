@@ -111,7 +111,7 @@ export class Hud {
       el(
         'div',
         'legend-row',
-        '<kbd>drag</kbd> <span class="tag">orbit</span> ' +
+        '<kbd>drag</kbd> <span class="tag">set angle (it stays)</span> ' +
           '<kbd>wheel</kbd> <span class="tag">zoom</span> ' +
           '<kbd>C</kbd> <span class="tag">recenter</span>',
       ),
