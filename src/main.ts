@@ -69,6 +69,9 @@ const loop = new GameLoop({
       groundMaterial: ground.displayName,
       traction: ground.tractionMultiplier,
       bladeHeight: blade ? blade.height : null,
+      carriedVolume: blade ? blade.carriedVolume : null,
+      bladeBlocked: blade ? blade.blocked : false,
+      load: vehicle.implementLoad,
     });
   },
 });

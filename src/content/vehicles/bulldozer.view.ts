@@ -80,12 +80,18 @@ export function buildBulldozer(def: VehicleDefinition): VehicleParts {
   const bladeWidth = bladeSpec?.kind === 'blade' ? bladeSpec.width : 4.0;
   const reach = bladeSpec?.kind === 'blade' ? bladeSpec.reach : 2.9;
 
+  // The sim treats `bladeState.height` as the CUTTING EDGE relative to the
+  // machine's ground line. The group is offset so the bottom of the cutting
+  // edge sits exactly there — otherwise the blade would visibly float above
+  // the trench it is digging.
+  const CUTTING_EDGE_LOCAL_Y = -0.78;
+
   const blade = new THREE.Group();
   blade.name = 'blade';
-  blade.position.set(0, 0.95, reach);
+  blade.position.set(0, -CUTTING_EDGE_LOCAL_Y, reach);
 
   blade.add(box(bladeWidth, 1.3, 0.26, bodyMat, 0, 0, 0));
-  blade.add(box(bladeWidth, 0.2, 0.42, steelMat, 0, -0.68, 0.02)); // cutting edge
+  blade.add(box(bladeWidth, 0.2, 0.42, steelMat, 0, CUTTING_EDGE_LOCAL_Y + 0.1, 0.02)); // cutting edge
   for (const side of [-1, 1]) {
     blade.add(box(0.24, 1.3, 0.62, bodyMat, (side * bladeWidth) / 2 + side * -0.12, 0, -0.42));
   }

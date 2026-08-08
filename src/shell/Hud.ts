@@ -26,6 +26,9 @@ export interface HudStats {
   groundMaterial: string;
   traction: number;
   bladeHeight: number | null;
+  carriedVolume: number | null;
+  bladeBlocked: boolean;
+  load: number;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -44,6 +47,8 @@ const ROWS = [
   ['ground', 'Ground'],
   ['traction', 'Traction'],
   ['blade', 'Blade'],
+  ['carried', 'Pushing'],
+  ['load', 'Load'],
   ['fps', 'FPS'],
   ['frame', 'Frame'],
   ['time', 'Sim time'],
@@ -112,18 +117,33 @@ export class Hud {
       ),
     );
     help.appendChild(
-      el('div', undefined, '<span class="tag">Digging arrives in M3.</span>'),
+      el(
+        'div',
+        undefined,
+        '<span class="tag">Drop the blade below grade to dig. ' +
+          'Volume is conserved — watch it hold steady.</span>',
+      ),
     );
 
     parent.append(stats, legend, help);
   }
 
   update(stats: HudStats): void {
-    this.title.innerHTML = `${stats.vehicleName} &middot; M2`;
+    this.title.innerHTML = `${stats.vehicleName} &middot; M3`;
     this.set('speed', `${stats.speedKph.toFixed(1)} km/h`);
     this.set('ground', stats.groundMaterial);
     this.set('traction', `×${stats.traction.toFixed(2)}`);
-    this.set('blade', stats.bladeHeight === null ? '—' : `${stats.bladeHeight.toFixed(2)} m`);
+    this.set(
+      'blade',
+      stats.bladeHeight === null
+        ? '—'
+        : `${stats.bladeHeight.toFixed(2)} m${stats.bladeBlocked ? '  ⛔' : ''}`,
+    );
+    this.set(
+      'carried',
+      stats.carriedVolume === null ? '—' : `${stats.carriedVolume.toFixed(2)} m³`,
+    );
+    this.set('load', `${Math.round(stats.load * 100)}%`);
     this.set('fps', stats.fps.toFixed(0));
     this.set('frame', `${stats.frameMs.toFixed(1)} ms`);
     this.set('time', `${stats.simTime.toFixed(1)} s`);

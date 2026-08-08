@@ -1,18 +1,23 @@
 /**
- * BladeImplement.
+ * BladeImplement — articulation plus the dig loop.
  *
- * M2 scope: the blade MOVES. It does not cut yet.
+ * FR-2.4 calls blade articulation non-negotiable, and it is: a fixed blade
+ * could never choose between driving over terrain and cutting into it, so
+ * there would be no dig loop to author at all.
  *
- * FR-2.4 calls blade articulation non-negotiable, and it is: a fixed blade can
- * never choose between driving over terrain and cutting into it, so there is
- * no way to author the M3 dig loop without it. M3 adds scrape -> carry ->
- * deposit inside this same `update`; nothing outside this file changes.
+ * The deformation itself lives in `sim/deform/blade.ts` so it can be tested
+ * without constructing a vehicle. This file owns the binding: where the
+ * cutting edge is, and what the resulting load does to the machine.
  */
 
 import { actionValue } from '../../input/actions';
+import { applyBladeCut } from '../../deform/blade';
 import { clamp } from '../../math/Vec';
 import type { BladeSpec, BladeState } from '../types';
 import type { Implement, ImplementContext } from './Implement';
+
+/** Cells beyond the edited region that slumping is allowed to reach into. */
+const SLUMP_MARGIN = 3;
 
 export class BladeImplement implements Implement {
   readonly id: string;
@@ -28,6 +33,8 @@ export class BladeImplement implements Implement {
       kind: 'blade',
       height: clamp(this.spec.restHeight, this.spec.minHeight, this.spec.maxHeight),
       carriedVolume: 0,
+      cutRate: 0,
+      blocked: false,
     };
   }
 
@@ -35,24 +42,54 @@ export class BladeImplement implements Implement {
     const state = ctx.vehicle.implementStates[this.id];
     if (!state || state.kind !== 'blade') return;
 
-    const raise = actionValue(ctx.input, this.spec.raiseAction);
-    const lower = actionValue(ctx.input, this.spec.lowerAction);
-    const drive = raise - lower;
-    if (drive === 0) return;
+    // --- articulation --------------------------------------------------------
+    const drive =
+      actionValue(ctx.input, this.spec.raiseAction) - actionValue(ctx.input, this.spec.lowerAction);
+    if (drive !== 0) {
+      state.height = clamp(
+        state.height + drive * this.spec.moveSpeed * ctx.dt,
+        this.spec.minHeight,
+        this.spec.maxHeight,
+      );
+    }
 
-    state.height = clamp(
-      state.height + drive * this.spec.moveSpeed * ctx.dt,
-      this.spec.minHeight,
-      this.spec.maxHeight,
-    );
+    // --- dig -----------------------------------------------------------------
+    const pos = ctx.vehicle.position;
+    const fx = Math.sin(ctx.vehicle.heading);
+    const fz = Math.cos(ctx.vehicle.heading);
 
-    // M3: rasterise the blade's swept volume, cut diggable cells down to the
-    // cutting edge, accumulate into `carriedVolume`, spill the overflow ahead,
-    // then run slump relaxation over the dirty region.
-  }
+    // The cutting edge is measured from the MACHINE's ground line, not from
+    // the terrain under the blade. That is what lets the blade bite into
+    // ground that rises ahead of the tracks instead of skating over it.
+    //
+    // Chassis pitch is deliberately ignored for now: on a slope a real blade
+    // tips with the machine. Folding that in is an M4 feel question, and it
+    // would only muddy the cut model before the loop is tuned.
+    const result = applyBladeCut({
+      terrain: ctx.terrain,
+      centerX: pos.x + fx * this.spec.reach,
+      centerZ: pos.z + fz * this.spec.reach,
+      heading: ctx.vehicle.heading,
+      width: this.spec.width,
+      bladeHeight: this.spec.height,
+      thickness: this.spec.thickness,
+      edgeY: pos.y + state.height,
+      capacity: this.spec.capacity,
+    });
 
-  /** World-space Y of the cutting edge. M3 rasterises against this. */
-  cuttingEdgeY(groundY: number, state: BladeState): number {
-    return groundY + state.height;
+    state.carriedVolume = result.prowVolume;
+    state.cutRate = ctx.dt > 0 ? result.volumeCut / ctx.dt : 0;
+    state.blocked = result.blocked;
+
+    if (result.resistance > 0) ctx.addResistance(result.resistance);
+
+    if (result.region) {
+      ctx.requestSlump({
+        x0: result.region.x0 - SLUMP_MARGIN,
+        z0: result.region.z0 - SLUMP_MARGIN,
+        x1: result.region.x1 + SLUMP_MARGIN,
+        z1: result.region.z1 + SLUMP_MARGIN,
+      });
+    }
   }
 }

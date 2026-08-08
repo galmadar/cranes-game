@@ -8,9 +8,9 @@
 import { Action, actionAxis, type ActionState } from '../input/actions';
 import { materialOf } from '../materials';
 import { clamp, vec3 } from '../math/Vec';
-import type { Terrain } from '../Terrain';
+import type { Rect, Terrain } from '../Terrain';
 import { BladeImplement } from './implements/BladeImplement';
-import type { Implement } from './implements/Implement';
+import type { Implement, ImplementContext } from './implements/Implement';
 import type { ImplementSpec, VehicleDefinition, VehicleState } from './types';
 
 /** Keeps the machine clear of the perimeter berm rather than climbing it. */
@@ -64,12 +64,59 @@ export class Vehicle {
     return materialOf(terrain.sampleMaterial(this.state.position.x, this.state.position.z));
   }
 
+  /**
+   * Drag from the implements, applied to locomotion on the FOLLOWING step.
+   * One frame of lag at 60Hz is imperceptible, and the alternative — running
+   * implements before locomotion — would have the blade cutting against a
+   * position the machine has not reached yet.
+   */
+  private resistance = 0;
+  private pendingSlump: Rect | null = null;
+
   update(dt: number, input: ActionState, terrain: Terrain): void {
     this.updateLocomotion(dt, input, terrain);
 
-    for (const impl of this.implements) {
-      impl.update({ dt, input, vehicle: this.state, terrain, def: this.def });
-    }
+    // A plain object rather than closed-over locals: implements write to it
+    // from callbacks, and this keeps the accumulation obvious.
+    const collected = { resistance: 0, slump: null as Rect | null };
+
+    const ctx: ImplementContext = {
+      dt,
+      input,
+      vehicle: this.state,
+      terrain,
+      def: this.def,
+      addResistance(value) {
+        if (value > collected.resistance) collected.resistance = value;
+      },
+      requestSlump(rect) {
+        collected.slump = collected.slump
+          ? {
+              x0: Math.min(collected.slump.x0, rect.x0),
+              z0: Math.min(collected.slump.z0, rect.z0),
+              x1: Math.max(collected.slump.x1, rect.x1),
+              z1: Math.max(collected.slump.z1, rect.z1),
+            }
+          : { ...rect };
+      },
+    };
+
+    for (const impl of this.implements) impl.update(ctx);
+
+    this.resistance = collected.resistance;
+    this.pendingSlump = collected.slump;
+  }
+
+  /** Taken by the World after every vehicle has stepped. */
+  consumeSlumpRegion(): Rect | null {
+    const rect = this.pendingSlump;
+    this.pendingSlump = null;
+    return rect;
+  }
+
+  /** 0..1 drag currently coming from the implements. */
+  get implementLoad(): number {
+    return this.resistance;
   }
 
   private updateLocomotion(dt: number, input: ActionState, terrain: Terrain): void {
@@ -82,8 +129,14 @@ export class Vehicle {
     // Mud bogs the tracks; sand is loose. This is the whole of FR-2.5.
     const traction = this.groundMaterial(terrain).tractionMultiplier;
 
+    // A loaded blade drags the machine down; one buried in rock nearly stops
+    // it. This is what makes the dig feel like work rather than like painting.
+    const load = 1 - clamp(this.resistance, 0, 0.98);
+
     const targetSpeed =
-      throttle >= 0 ? loco.maxSpeed * traction * throttle : loco.maxReverseSpeed * traction * throttle;
+      (throttle >= 0 ? loco.maxSpeed * throttle : loco.maxReverseSpeed * throttle) *
+      traction *
+      load;
 
     // Slowing down is quicker than speeding up — tracks brake hard.
     const closingOnZero = Math.abs(targetSpeed) < Math.abs(s.speed);

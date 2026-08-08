@@ -43,6 +43,7 @@ export const bulldozerDef: VehicleDefinition = {
       lowerAction: BladeAction.Lower,
 
       width: 4.0,
+      height: 1.3,
       thickness: 0.5,
       reach: 2.9,
 

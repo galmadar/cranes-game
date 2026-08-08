@@ -182,11 +182,33 @@ describe('blade implement (FR-2.4)', () => {
     expect(spec.kind === 'blade' ? spec.minHeight : 0).toBeLessThan(0);
   });
 
-  it('carries nothing yet — digging is M3', () => {
+  it('carries nothing while the blade rides clear of the ground', () => {
     const terrain = flatWorld();
     const v = new Vehicle(bulldozerDef, SPAWN);
-    drive(v, terrain, { ...forward, bladeLower: 1 }, 3);
+    drive(v, terrain, { ...forward, bladeRaise: 1 }, 3);
     const state = v.state.implementStates['blade'];
     expect(state && state.kind === 'blade' ? state.carriedVolume : -1).toBe(0);
+  });
+
+  it('picks up a load once the blade is dropped and driven forward', () => {
+    const terrain = flatWorld(MaterialId.SAND);
+    terrain.height.fill(2);
+    const v = new Vehicle(bulldozerDef, SPAWN);
+    drive(v, terrain, { ...forward, bladeLower: 1 }, 3);
+
+    const state = v.state.implementStates['blade'];
+    expect(state && state.kind === 'blade' ? state.carriedVolume : 0).toBeGreaterThan(0.5);
+    expect(v.implementLoad).toBeGreaterThan(0);
+  });
+
+  it('is slowed by a loaded blade', () => {
+    const build = (bladeDown: boolean) => {
+      const terrain = flatWorld(MaterialId.SAND);
+      terrain.height.fill(2);
+      const v = new Vehicle(bulldozerDef, SPAWN);
+      drive(v, terrain, bladeDown ? { ...forward, bladeLower: 1 } : { ...forward, bladeRaise: 1 }, 4);
+      return v.state.speed;
+    };
+    expect(build(true)).toBeLessThan(build(false) * 0.9);
   });
 });

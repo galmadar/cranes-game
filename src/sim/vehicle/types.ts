@@ -46,6 +46,8 @@ export interface BladeSpec {
 
   /** Cutting-edge width, metres. */
   width: number;
+  /** Mouldboard height above the cutting edge, metres. Caps the bite. */
+  height: number;
   /** Fore-aft thickness of the cut, metres. */
   thickness: number;
   /** Distance forward of the vehicle origin. */
@@ -66,10 +68,18 @@ export type ImplementSpec = BladeSpec;
 
 export interface BladeState {
   kind: 'blade';
-  /** Current height relative to the vehicle's ground line. */
+  /** Cutting-edge height relative to the vehicle's ground line. */
   height: number;
-  /** m³ of soil riding on the blade. Stays 0 until M3. */
+  /**
+   * m³ standing above the cutting edge directly ahead — the prow the blade is
+   * pushing. Measured from the terrain, not accumulated in a hidden tally, so
+   * what the player sees and what the sim believes cannot drift apart.
+   */
   carriedVolume: number;
+  /** m³/s currently being cut. Diagnostic. */
+  cutRate: number;
+  /** True while the blade is up against non-diggable material (FR-3.2). */
+  blocked: boolean;
 }
 
 export type ImplementState = BladeState;
