@@ -26,13 +26,16 @@ export const bulldozerDef: VehicleDefinition = {
 
   dimensions: { length: 5.2, width: 3.4, height: 3.0 },
 
+  // Uprated from the M3 values: the machine bogged to a crawl under a full
+  // blade, which was realistic and not much fun. All of these are live-editable
+  // from the settings panel (Esc).
   locomotion: {
     kind: 'tracked',
-    maxSpeed: 4.2,
-    maxReverseSpeed: 2.6,
-    acceleration: 3.0,
-    braking: 6.0,
-    turnRate: 1.1,
+    maxSpeed: 5.4,
+    maxReverseSpeed: 3.4,
+    acceleration: 4.2,
+    braking: 7.5,
+    turnRate: 1.35,
   },
 
   implements: [
@@ -51,9 +54,9 @@ export const bulldozerDef: VehicleDefinition = {
       minHeight: -0.55,
       maxHeight: 1.4,
       restHeight: 0.25,
-      moveSpeed: 0.9,
+      moveSpeed: 1.15,
 
-      capacity: 2.4,
+      capacity: 3.4,
     },
   ],
 

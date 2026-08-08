@@ -19,9 +19,7 @@
 
 import { materialOf } from '../materials';
 import type { Rect, Terrain } from '../Terrain';
-
-/** Fraction of the legal correction applied per pass. Below 1 for damping. */
-const RELAXATION = 0.5;
+import { TUNING } from '../tuning';
 
 /**
  * Transfers smaller than this count as rest, in metres.
@@ -96,7 +94,7 @@ export function relaxSlump(terrain: Terrain, rect: Rect, maxPasses = 2): SlumpRe
         const drop = h - targetH;
         if (drop <= maxDrop) continue;
 
-        const transfer = Math.min(drop - maxDrop, drop * 0.5) * RELAXATION;
+        const transfer = Math.min(drop - maxDrop, drop * 0.5) * TUNING.slumpRelaxation;
         if (transfer < MIN_TRANSFER) continue;
 
         height[i] = h - transfer;

@@ -9,14 +9,8 @@
 import { relaxSlump } from './deform/slump';
 import { EMPTY_ACTION_STATE, type ActionState } from './input/actions';
 import type { Terrain } from './Terrain';
+import { TUNING } from './tuning';
 import type { Vehicle } from './vehicle/Vehicle';
-
-/**
- * Relaxation passes per step. Two is enough to keep up with a blade at 60Hz
- * while leaving piles visibly settling for a moment after you back off, which
- * reads better than snapping instantly to the angle of repose.
- */
-const SLUMP_PASSES = 2;
 
 export class World {
   readonly terrain: Terrain;
@@ -68,7 +62,7 @@ export class World {
     // turn, so overlapping edits relax together instead of fighting.
     for (const vehicle of this.vehicles) {
       const region = vehicle.consumeSlumpRegion();
-      if (region) relaxSlump(this.terrain, region, SLUMP_PASSES);
+      if (region) relaxSlump(this.terrain, region, TUNING.slumpPasses);
     }
 
     this.elapsedSeconds += dt;

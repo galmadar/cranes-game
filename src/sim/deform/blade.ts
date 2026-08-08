@@ -20,13 +20,7 @@
 
 import { materialOf, MaterialId } from '../materials';
 import type { Rect, Terrain } from '../Terrain';
-
-/** Beyond this prow load the blade stops holding soil and it rolls off the ends. */
-const SIDE_SPILL_FRACTION = 0.45;
-/** Drag from a completely full blade. Tuning knob for M4. */
-const FULL_BLADE_RESISTANCE = 0.75;
-/** Resistance applied when the blade is buried in something it cannot cut. */
-const ROCK_RESISTANCE = 0.92;
+import { TUNING } from '../tuning';
 
 /**
  * Soil within this distance of the cutting edge counts as already cut, in metres.
@@ -357,7 +351,7 @@ export function applyBladeCut(params: BladeCutParams): BladeCutResult {
     // Once the prow is over capacity the blade cannot hold any more and soil
     // rolls off the ends — the windrows a real dozer leaves down each side.
     const overloaded = prowBefore > params.capacity;
-    const toSides = overloaded ? volumeCut * SIDE_SPILL_FRACTION : 0;
+    const toSides = overloaded ? volumeCut * TUNING.sideSpillFraction : 0;
 
     deposited += fillLowestFirst(terrain, depositZone.cells, volumeCut - toSides, dominant);
 
@@ -401,8 +395,8 @@ export function applyBladeCut(params: BladeCutParams): BladeCutResult {
   // and pins resistance at maximum before the machine has done any work. Prow
   // volume is a state, not a rate, so it cannot spike.
   const loadResistance =
-    params.capacity > 0 ? Math.min(1, prowVolume / params.capacity) * FULL_BLADE_RESISTANCE : 0;
-  const resistance = Math.max(blocked ? ROCK_RESISTANCE : 0, loadResistance);
+    params.capacity > 0 ? Math.min(1, prowVolume / params.capacity) * TUNING.fullBladeResistance : 0;
+  const resistance = Math.max(blocked ? TUNING.rockResistance : 0, loadResistance);
 
   let region = unionRect(cutZone.rect, depositZone.rect);
   for (const zone of sideZones) region = unionRect(region, zone.rect);

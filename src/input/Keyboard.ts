@@ -65,8 +65,17 @@ export class Keyboard {
     this.pressed.clear();
   }
 
+  /** True while the player is typing into a form control. */
+  private static isTyping(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    const tag = target.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
+  }
+
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (event.repeat) return;
+    // Typing "4.2" into a settings field must not also drive the machine.
+    if (Keyboard.isTyping(event.target)) return;
     if (SWALLOW.has(event.code)) event.preventDefault();
     this.pressed.add(event.code);
   };

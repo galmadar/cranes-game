@@ -20,6 +20,7 @@ export type VehicleFamily =
 
 // ------------------------------------------------------------------ chassis
 
+/** Numeric fields are intentionally mutable: the settings panel edits them live. */
 export interface TrackedLocomotionSpec {
   kind: 'tracked';
   /** m/s */

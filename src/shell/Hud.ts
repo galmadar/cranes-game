@@ -119,6 +119,13 @@ export class Hud {
     help.appendChild(
       el(
         'div',
+        'legend-row',
+        '<kbd>Esc</kbd> <span class="tag">settings — tune every number live</span>',
+      ),
+    );
+    help.appendChild(
+      el(
+        'div',
         undefined,
         '<span class="tag">Drop the blade below grade to dig. ' +
           'Volume is conserved — watch it hold steady.</span>',

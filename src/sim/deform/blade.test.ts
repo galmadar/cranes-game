@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MaterialId } from '../materials';
 import { Terrain } from '../Terrain';
+import { TUNING } from '../tuning';
 import { applyBladeCut, type BladeCutParams } from './blade';
 
 function make(material: MaterialId = MaterialId.SAND, flatHeight = 0): Terrain {
@@ -236,10 +237,12 @@ describe('resistance', () => {
   });
 
   it('does report a heavy load when the blade is buried deep', () => {
-    // Ramming the blade well below grade SHOULD bog the machine down.
+    // Ramming the blade well below grade SHOULD bog the machine down — up to
+    // whatever the configured full-blade drag is, rather than a magic number
+    // that goes stale the moment someone tunes the game.
     const GROUND = 3;
     const deep = cut(make(MaterialId.SAND, GROUND), { edgeY: GROUND - 1.3 });
-    expect(deep.resistance).toBeGreaterThan(0.6);
+    expect(deep.resistance).toBeCloseTo(TUNING.fullBladeResistance, 5);
   });
 
   it('never fully stops the machine on diggable ground', () => {
