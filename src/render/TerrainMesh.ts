@@ -74,13 +74,6 @@ function addSurfaceDetail(material: THREE.MeshStandardMaterial): void {
   };
 }
 
-/** Per-cell brightness jitter so large flat areas don't read as dead colour. */
-function hashUnit(cx: number, cz: number): number {
-  let h = (Math.imul(cx, 374761393) + Math.imul(cz, 668265263)) | 0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177) | 0;
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
-}
-
 export class TerrainMesh {
   readonly object: THREE.Mesh;
 
@@ -240,12 +233,14 @@ export class TerrainMesh {
         normals[o + 1] = invLen;
         normals[o + 2] = -dz * invLen;
 
+        // No per-cell jitter here any more. Random brightness per vertex at
+        // 0.5m spacing is cell-scale blotchiness — exactly the dithered look
+        // that dates a scene. Surface variation now comes from smooth
+        // world-space noise in the shader, which does not alias.
         const p = terrain.material[i] * 3;
-        const jitter = 0.94 + 0.12 * hashUnit(cx, cz);
-
-        let r = this.palette[p + 0] * jitter;
-        let g = this.palette[p + 1] * jitter;
-        let b = this.palette[p + 2] * jitter;
+        let r = this.palette[p + 0];
+        let g = this.palette[p + 1];
+        let b = this.palette[p + 2];
 
         // Churned ground goes darker and loses saturation — turned earth reads
         // damp. This is what makes track marks and fresh cuts visible.

@@ -11,6 +11,7 @@ import type { World } from '../sim/World';
 import { ChaseCamera } from './ChaseCamera';
 import { DustSystem } from './DustSystem';
 import { GradePlane } from './GradePlane';
+import { PostFX } from './PostFX';
 import { SkyDome } from './SkyDome';
 import { TerrainMesh } from './TerrainMesh';
 import { VehicleView } from './VehicleView';
@@ -29,6 +30,7 @@ export class Renderer {
   private readonly sky: SkyDome;
   private readonly dust: DustSystem;
   private gradePlane: GradePlane | null = null;
+  private postFx: PostFX | null = null;
   private readonly container: HTMLElement;
   private readonly resizeObserver: ResizeObserver;
 
@@ -41,7 +43,7 @@ export class Renderer {
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1.18;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
@@ -55,7 +57,7 @@ export class Renderer {
 
     // Low sun angle: hillshading is what makes elevation legible (FR-1.3),
     // and it is doing most of the work here since there are no textures yet.
-    this.sun = new THREE.DirectionalLight(0xfff0d8, 2.4);
+    this.sun = new THREE.DirectionalLight(0xffeccd, 2.7);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.camera.near = 1;
@@ -68,7 +70,10 @@ export class Renderer {
     this.sun.shadow.normalBias = 0.04;
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
-    this.scene.add(new THREE.HemisphereLight(0x9fc4ff, 0x40382a, 0.85));
+    // Sky/ground bounce, lifted hard. Shadows crushing to black is half of
+    // what made this read as a 1990s renderer: real outdoor shade is filled by
+    // light from the whole sky dome, not left at zero.
+    this.scene.add(new THREE.HemisphereLight(0xaacdf5, 0x6b5f48, 1.45));
 
     this.terrainMesh = new TerrainMesh(world.terrain);
     this.scene.add(this.terrainMesh.object);
@@ -85,6 +90,14 @@ export class Renderer {
     });
 
     this.chase = new ChaseCamera(this.renderer.domElement);
+
+    this.postFx = new PostFX(
+      this.renderer,
+      this.scene,
+      this.chase.camera,
+      container.clientWidth || 1,
+      container.clientHeight || 1,
+    );
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
@@ -168,7 +181,16 @@ export class Renderer {
     }
 
     this.sky.follow(this.chase.camera);
-    this.renderer.render(this.scene, this.chase.camera);
+    if (!this.postFx?.render(frameDt)) {
+      this.renderer.render(this.scene, this.chase.camera);
+    }
+  }
+
+  /** Toggle the whole post chain — useful for judging what it is buying. */
+  togglePostFx(): boolean {
+    if (!this.postFx) return false;
+    this.postFx.setEnabled(!this.postFx.isEnabled);
+    return this.postFx.isEnabled;
   }
 
   get info(): { calls: number; triangles: number } {
@@ -181,6 +203,7 @@ export class Renderer {
     const h = this.container.clientHeight || window.innerHeight;
     this.renderer.setSize(w, h, false);
     this.chase.setAspect(w / h);
+    this.postFx?.setSize(w, h, Math.min(window.devicePixelRatio, 2));
   }
 
   dispose(): void {
@@ -190,6 +213,7 @@ export class Renderer {
     this.sky.dispose();
     this.dust.dispose();
     this.gradePlane?.dispose();
+    this.postFx?.dispose();
     this.vehicleViews.forEach((v) => v.dispose());
     this.renderer.dispose();
     this.renderer.domElement.remove();

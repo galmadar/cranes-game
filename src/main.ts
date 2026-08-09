@@ -70,6 +70,7 @@ window.addEventListener('keydown', (e) => {
   if (typing) return;
   if (e.code === 'KeyC') renderer.chase.recenter();
   if (e.code === 'KeyG') renderer.toggleJobOverlay(world);
+  if (e.code === 'KeyP') renderer.togglePostFx();
 });
 
 // Volume is an O(cells) scan. It only needs to be readable, not per-frame

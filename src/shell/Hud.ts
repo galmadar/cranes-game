@@ -123,7 +123,8 @@ export class Hud {
       el(
         'div',
         'legend-row',
-        '<kbd>G</kbd> <span class="tag">toggle grade overlay</span> ' +
+        '<kbd>G</kbd> <span class="tag">grade overlay</span> ' +
+          '<kbd>P</kbd> <span class="tag">post FX</span> ' +
           '<kbd>Esc</kbd> <span class="tag">settings</span>',
       ),
     );
