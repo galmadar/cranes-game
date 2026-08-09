@@ -11,6 +11,7 @@ import { getVehicle, DEFAULT_VEHICLE_ID } from './content/vehicles/registry';
 import { Keyboard } from './input/Keyboard';
 import { Renderer } from './render/Renderer';
 import { JobRunner } from './sim/job/JobRunner';
+import { targetAt } from './sim/job/JobSite';
 import { Terrain } from './sim/Terrain';
 import { Vehicle } from './sim/vehicle/Vehicle';
 import { World } from './sim/World';
@@ -106,6 +107,7 @@ const loop = new GameLoop({
       groundMaterial: ground.displayName,
       traction: ground.tractionMultiplier,
       bladeHeight: blade ? blade.height : null,
+      gradeAtBlade: gradeUnderBlade(),
       carriedVolume: blade ? blade.carriedVolume : null,
       bladeBlocked: blade ? blade.blocked : false,
       load: vehicle.implementLoad,
@@ -114,6 +116,22 @@ const loop = new GameLoop({
     jobHud.update(world.job);
   },
 });
+
+/** How far the ground at the blade sits above (+) or below (-) target grade. */
+function gradeUnderBlade(): number | null {
+  const job = world.job;
+  if (!job) return null;
+
+  const s = vehicle.state;
+  const bx = s.position.x + Math.sin(s.heading) * 3;
+  const bz = s.position.z + Math.cos(s.heading) * 3;
+  const target = targetAt(
+    job.site,
+    Math.round(terrain.worldToCellX(bx)),
+    Math.round(terrain.worldToCellZ(bz)),
+  );
+  return target === null ? null : terrain.sampleHeight(bx, bz) - target;
+}
 
 loop.start();
 

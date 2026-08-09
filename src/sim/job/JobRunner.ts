@@ -57,6 +57,22 @@ export class JobRunner {
   }
 
   /**
+   * Share of the earthworks done, 0..1 — how much of the soil that had to move
+   * has moved.
+   *
+   * This exists because **accuracy is a terrible progress signal**. It counts
+   * cells inside tolerance, so it barely moves while the player shifts tonnes
+   * of soil and then leaps at the very end. A player watching it work hard for
+   * two minutes and see 12% concludes the job is impossible. Volume remaining
+   * falls steadily from the first push, which is the honest picture of effort.
+   */
+  get earthMovedFraction(): number {
+    if (this.idealVolume <= 0) return 1;
+    const remaining = this.progress.cutRemaining / this.idealVolume;
+    return Math.min(1, Math.max(0, 1 - remaining));
+  }
+
+  /**
    * How close to a perfect operator, 0..1.
    *
    * Capped at 1: you cannot beat the theoretical minimum, and floating-point

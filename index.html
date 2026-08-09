@@ -63,21 +63,29 @@
       }
       .job-brief { margin: 0 0 8px; color: var(--hud-dim); font-size: 11.5px; }
 
-      .job-meter { display: flex; align-items: center; gap: 10px; }
-      .job-percent {
-        font-size: 20px; font-weight: 600; min-width: 54px;
-        font-variant-numeric: tabular-nums;
+      .job-meter { display: flex; align-items: center; gap: 9px; margin-bottom: 5px; }
+      .job-meter-label { width: 78px; flex: 0 0 auto; font-size: 11px; color: var(--hud-dim); }
+      .job-meter-value {
+        width: 38px; flex: 0 0 auto; text-align: right;
+        font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums;
       }
       .job-track {
-        flex: 1 1 auto; height: 7px; border-radius: 4px;
+        position: relative;
+        flex: 1 1 auto; height: 8px; border-radius: 4px;
         background: rgba(255, 255, 255, 0.12); overflow: hidden;
       }
       .job-bar {
         height: 100%; width: 0%; border-radius: 4px;
-        background: var(--hud-accent);
         transition: width 0.15s linear, background-color 0.3s ease;
       }
+      .job-bar.is-moved { background: #6ba7e0; }
+      .job-bar.is-graded { background: var(--hud-accent); }
       .job-bar.is-done { background: #5fd08a; }
+      /* Where "finished" actually is, on the accuracy bar. */
+      .job-threshold {
+        position: absolute; top: -2px; bottom: -2px; width: 2px;
+        background: rgba(255, 255, 255, 0.75);
+      }
 
       .job-stats {
         display: flex; justify-content: space-between; gap: 10px;

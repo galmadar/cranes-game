@@ -26,6 +26,8 @@ export interface HudStats {
   groundMaterial: string;
   traction: number;
   bladeHeight: number | null;
+  /** Ground height minus target, at the blade. Positive = cut, negative = fill. */
+  gradeAtBlade: number | null;
   carriedVolume: number | null;
   bladeBlocked: boolean;
   load: number;
@@ -47,6 +49,7 @@ const ROWS = [
   ['ground', 'Ground'],
   ['traction', 'Traction'],
   ['blade', 'Blade'],
+  ['grade', 'At blade'],
   ['carried', 'Pushing'],
   ['load', 'Load'],
   ['fps', 'FPS'],
@@ -147,6 +150,19 @@ export class Hud {
         ? '—'
         : `${stats.bladeHeight.toFixed(2)} m${stats.bladeBlocked ? '  ⛔' : ''}`,
     );
+    // Names the action rather than the number: the player should not have to
+    // work out that "+0.4" means "you are standing on soil that must come off".
+    if (stats.gradeAtBlade === null) {
+      this.set('grade', '—');
+    } else {
+      const g = stats.gradeAtBlade;
+      this.set(
+        'grade',
+        Math.abs(g) < 0.2
+          ? 'on grade'
+          : `${g > 0 ? 'cut' : 'fill'} ${Math.abs(g).toFixed(2)} m`,
+      );
+    }
     this.set(
       'carried',
       stats.carriedVolume === null ? '—' : `${stats.carriedVolume.toFixed(2)} m³`,

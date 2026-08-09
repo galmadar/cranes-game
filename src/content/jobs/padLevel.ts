@@ -18,17 +18,19 @@ export function createPadLevelJob(terrain: Terrain): JobSite {
   return createFlatPad(terrain, {
     id: 'pad-level-01',
     title: 'Level the pad',
-    brief: 'Cut the mound into the pit until the whole site sits flat, ±20 cm.',
+    brief: 'Blade down (F). Push everything above the white grid into the hollows below it.',
 
     centerX: -24,
     centerZ: -6,
-    width: 22,
-    depth: 22,
+    width: 14,
+    depth: 14,
 
-    // Loose enough that the endgame is not cell-by-cell fiddling. Tunable
-    // live from the settings drawer while we work out what plays well.
-    tolerance: 0.2,
-    requiredAccuracy: 0.9,
-    parSeconds: 300,
+    // A FIRST contract, sized to teach rather than to test: about 41 m3 of
+    // earth, two minutes of work. The 22m version was 185 m3 and roughly ten
+    // minutes, which read as "impossible" long before it read as "hard".
+    // All three are live in the settings drawer under Contract.
+    tolerance: 0.25,
+    requiredAccuracy: 0.85,
+    parSeconds: 150,
   });
 }

@@ -10,6 +10,7 @@ import { getVehicle } from '../content/vehicles/registry';
 import type { World } from '../sim/World';
 import { ChaseCamera } from './ChaseCamera';
 import { DustSystem } from './DustSystem';
+import { GradePlane } from './GradePlane';
 import { SkyDome } from './SkyDome';
 import { TerrainMesh } from './TerrainMesh';
 import { VehicleView } from './VehicleView';
@@ -27,6 +28,7 @@ export class Renderer {
   private readonly sun: THREE.DirectionalLight;
   private readonly sky: SkyDome;
   private readonly dust: DustSystem;
+  private gradePlane: GradePlane | null = null;
   private readonly container: HTMLElement;
   private readonly resizeObserver: ResizeObserver;
 
@@ -89,20 +91,32 @@ export class Renderer {
     this.resize();
   }
 
-  /** Show or hide the cut/fill overlay, refreshing the site's colours. */
+  /** Show or hide the grade guides: cut/fill tint AND the target surface. */
   toggleJobOverlay(world: World): boolean {
     const enabled = !this.terrainMesh.isOverlayEnabled;
     this.terrainMesh.setOverlayEnabled(enabled);
+    this.gradePlane?.setVisible(enabled);
 
     const bounds = world.job?.site.bounds;
     if (bounds) world.terrain.markDirty(bounds.x0, bounds.z0, bounds.x1, bounds.z1);
     return enabled;
   }
 
-  /** Repaint the whole site — call when a job starts or changes. */
+  /** Rebuild the target surface and repaint the site. Call when a job starts. */
   refreshJobSite(world: World): void {
-    const bounds = world.job?.site.bounds;
-    if (bounds) world.terrain.markDirty(bounds.x0, bounds.z0, bounds.x1, bounds.z1);
+    if (this.gradePlane) {
+      this.scene.remove(this.gradePlane.object);
+      this.gradePlane.dispose();
+      this.gradePlane = null;
+    }
+
+    const site = world.job?.site;
+    if (site) {
+      this.gradePlane = new GradePlane(world.terrain, site);
+      this.gradePlane.setVisible(this.terrainMesh.isOverlayEnabled);
+      this.scene.add(this.gradePlane.object);
+      world.terrain.markDirty(site.bounds.x0, site.bounds.z0, site.bounds.x1, site.bounds.z1);
+    }
   }
 
   /** Pull pending simulation changes into the scene graph. */
@@ -175,6 +189,7 @@ export class Renderer {
     this.terrainMesh.dispose();
     this.sky.dispose();
     this.dust.dispose();
+    this.gradePlane?.dispose();
     this.vehicleViews.forEach((v) => v.dispose());
     this.renderer.dispose();
     this.renderer.domElement.remove();

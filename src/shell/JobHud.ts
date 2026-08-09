@@ -1,13 +1,16 @@
 /**
  * Objective banner.
  *
- * Deliberately the most prominent thing on screen. The whole point of M6 is
- * that the player has something to aim for, and an objective buried in a
+ * Deliberately the most prominent thing on screen — an objective buried in a
  * diagnostics list is an objective nobody reads.
  *
- * Shows accuracy as the headline, because that is the number the job is scored
- * on, and cut/fill remaining underneath because that is the number that tells
- * you what to physically do next.
+ * Two bars, not one, and the reason matters. **Accuracy alone is a dishonest
+ * progress signal**: it counts cells inside tolerance, so it hardly moves
+ * while the player shifts tonnes of soil and then jumps right at the end.
+ * Watching it read 12% after two minutes of hard work makes a solvable job
+ * feel impossible. So "Earth moved" is the reassurance — it climbs from the
+ * first push — and "On grade" is the gate, with a marker showing the bar you
+ * actually have to clear.
  */
 
 import type { JobRunner } from '../sim/job/JobRunner';
@@ -29,15 +32,35 @@ function clock(seconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+interface Meter {
+  row: HTMLElement;
+  value: HTMLElement;
+  bar: HTMLElement;
+}
+
+function meter(label: string, className: string): Meter {
+  const row = el('div', 'job-meter');
+  row.appendChild(el('span', 'job-meter-label', label));
+
+  const track = el('div', 'job-track');
+  const bar = el('div', `job-bar ${className}`);
+  track.appendChild(bar);
+  row.appendChild(track);
+
+  const value = el('span', 'job-meter-value', '0%');
+  row.appendChild(value);
+
+  return { row, value, bar };
+}
+
 export class JobHud {
   private readonly root: HTMLElement;
   private readonly title: HTMLElement;
   private readonly brief: HTMLElement;
-  private readonly percent: HTMLElement;
-  private readonly bar: HTMLElement;
-  private readonly cut: HTMLElement;
-  private readonly fill: HTMLElement;
-  private readonly time: HTMLElement;
+  private readonly moved: Meter;
+  private readonly graded: Meter;
+  private readonly threshold: HTMLElement;
+  private readonly stats: HTMLElement;
   private readonly result: HTMLElement;
 
   private wasComplete = false;
@@ -49,23 +72,18 @@ export class JobHud {
     this.title = el('h2', 'job-title', 'Contract');
     this.brief = el('p', 'job-brief', '');
 
-    const meter = el('div', 'job-meter');
-    this.percent = el('span', 'job-percent', '0%');
-    const track = el('div', 'job-track');
-    this.bar = el('div', 'job-bar');
-    track.appendChild(this.bar);
-    meter.append(this.percent, track);
+    this.moved = meter('Earth moved', 'is-moved');
+    this.graded = meter('On grade', 'is-graded');
 
-    const stats = el('div', 'job-stats');
-    this.cut = el('span', undefined, '');
-    this.fill = el('span', undefined, '');
-    this.time = el('span', undefined, '');
-    stats.append(this.cut, this.fill, this.time);
+    // Marker on the accuracy bar showing what actually counts as finished.
+    this.threshold = el('div', 'job-threshold');
+    this.graded.bar.parentElement?.appendChild(this.threshold);
 
+    this.stats = el('div', 'job-stats');
     this.result = el('div', 'job-result', '');
     this.result.hidden = true;
 
-    this.root.append(this.title, this.brief, meter, stats, this.result);
+    this.root.append(this.title, this.brief, this.moved.row, this.graded.row, this.stats, this.result);
     parent.appendChild(this.root);
   }
 
@@ -77,23 +95,28 @@ export class JobHud {
     this.root.hidden = false;
 
     const p = job.current;
-    const pct = p.accuracy * 100;
+    const movedPct = job.earthMovedFraction * 100;
+    const gradedPct = p.accuracy * 100;
+    const needPct = job.site.requiredAccuracy * 100;
 
     this.title.textContent = job.site.title;
     this.brief.textContent = job.site.brief;
-    this.percent.textContent = `${pct.toFixed(0)}%`;
-    this.bar.style.width = `${Math.min(100, pct)}%`;
 
-    // Required accuracy as a threshold marker, so "how much more?" is visible.
-    this.bar.classList.toggle('is-done', p.accuracy >= job.site.requiredAccuracy);
+    this.moved.bar.style.width = `${movedPct}%`;
+    this.moved.value.textContent = `${movedPct.toFixed(0)}%`;
 
-    this.cut.innerHTML = `<b>${p.cutRemaining.toFixed(1)}</b> m³ to cut`;
-    this.fill.innerHTML = `<b>${p.fillRemaining.toFixed(1)}</b> m³ to fill`;
+    this.graded.bar.style.width = `${gradedPct}%`;
+    this.graded.value.textContent = `${gradedPct.toFixed(0)}%`;
+    this.graded.bar.classList.toggle('is-done', p.accuracy >= job.site.requiredAccuracy);
+    this.threshold.style.left = `${needPct}%`;
+    this.threshold.title = `${needPct.toFixed(0)}% needed`;
 
     const over = job.elapsed > job.site.parSeconds;
-    this.time.innerHTML =
-      `<span class="${over ? 'job-over' : ''}">${clock(job.elapsed)}</span>` +
-      ` <span class="tag">/ ${clock(job.site.parSeconds)} par</span>`;
+    this.stats.innerHTML =
+      `<span><b>${p.cutRemaining.toFixed(1)}</b> m³ to cut</span>` +
+      `<span><b>${p.fillRemaining.toFixed(1)}</b> m³ to fill</span>` +
+      `<span class="${over ? 'job-over' : ''}">${clock(job.elapsed)}` +
+      `<span class="tag"> / ${clock(job.site.parSeconds)}</span></span>`;
 
     const result = job.result;
     if (result && !this.wasComplete) {
@@ -102,10 +125,10 @@ export class JobHud {
       this.result.hidden = false;
       this.result.innerHTML =
         `<strong>Job complete</strong>` +
-        `<span>${(result.accuracy * 100).toFixed(0)}% on grade</span>` +
-        `<span>${clock(result.elapsed)} ${result.underPar ? '· under par' : '· over par'}</span>` +
-        `<span>${result.volumeMoved.toFixed(0)} m³ moved ` +
-        `· ${(result.efficiency * 100).toFixed(0)}% efficient</span>`;
+        `<span>${(result.accuracy * 100).toFixed(0)}% on grade in ${clock(result.elapsed)}` +
+        ` ${result.underPar ? '· under par' : '· over par'}</span>` +
+        `<span>${result.volumeMoved.toFixed(0)} m³ moved` +
+        ` · ${(result.efficiency * 100).toFixed(0)}% efficient</span>`;
     }
   }
 }

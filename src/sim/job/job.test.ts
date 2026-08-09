@@ -200,6 +200,61 @@ describe('JobRunner', () => {
     expect(runner.efficiency).toBeLessThan(0.25);
   });
 
+  // The fix for "I don't understand how to complete the job": accuracy is a
+  // dishonest progress signal, so the HUD leads with earth moved instead.
+  describe('earth-moved progress', () => {
+    it('starts at zero and reaches one when the ground hits target', () => {
+      const t = flatTerrain(0);
+      const site = pad(t);
+      t.height.fill(1.5);
+
+      const runner = new JobRunner(t, site);
+      expect(runner.earthMovedFraction).toBe(0);
+
+      t.height.fill(0);
+      runner.refresh(t);
+      expect(runner.earthMovedFraction).toBe(1);
+    });
+
+    it('climbs steadily while accuracy is still pinned at zero', () => {
+      const t = flatTerrain(0);
+      const site = pad(t, 0.1);
+      t.height.fill(2);
+      const runner = new JobRunner(t, site);
+
+      // Shave the site down in stages. Every stage is still far outside
+      // tolerance, so accuracy stays at 0 throughout — exactly the situation
+      // that made the job feel impossible.
+      const seen: number[] = [];
+      for (const h of [1.6, 1.2, 0.8, 0.4]) {
+        t.height.fill(h);
+        runner.refresh(t);
+        expect(runner.current.accuracy).toBe(0);
+        seen.push(runner.earthMovedFraction);
+      }
+
+      for (let i = 1; i < seen.length; i++) expect(seen[i]).toBeGreaterThan(seen[i - 1]);
+      expect(seen[0]).toBeGreaterThan(0);
+    });
+
+    it('stays within 0..1 even if soil is pushed in from outside the site', () => {
+      const t = flatTerrain(0);
+      const site = pad(t);
+      t.height.fill(1);
+      const runner = new JobRunner(t, site);
+
+      t.height.fill(5); // worse than we started
+      runner.refresh(t);
+      expect(runner.earthMovedFraction).toBeGreaterThanOrEqual(0);
+      expect(runner.earthMovedFraction).toBeLessThanOrEqual(1);
+    });
+
+    it('reports complete progress for a job that needed no cutting', () => {
+      const t = flatTerrain(0);
+      expect(new JobRunner(t, pad(t)).earthMovedFraction).toBe(1);
+    });
+  });
+
   it('completes once accuracy passes the requirement', () => {
     const t = flatTerrain(3);
     const site = pad(t);
