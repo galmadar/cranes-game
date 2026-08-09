@@ -8,6 +8,7 @@
 
 import { relaxSlump } from './deform/slump';
 import { EMPTY_ACTION_STATE, type ActionState } from './input/actions';
+import type { JobRunner } from './job/JobRunner';
 import type { Terrain } from './Terrain';
 import { TUNING } from './tuning';
 import type { Vehicle } from './vehicle/Vehicle';
@@ -15,6 +16,9 @@ import type { Vehicle } from './vehicle/Vehicle';
 export class World {
   readonly terrain: Terrain;
   readonly vehicles: Vehicle[] = [];
+
+  /** The active contract, if any. Null means free roam. */
+  job: JobRunner | null = null;
 
   private activeIndex = 0;
   private elapsedSeconds = 0;
@@ -65,7 +69,22 @@ export class World {
       if (region) relaxSlump(this.terrain, region, TUNING.slumpPasses);
     }
 
+    // Score after settling, so the job is measured against ground that has
+    // finished moving rather than mid-collapse.
+    if (this.job) this.job.step(dt, this.terrain, this.cutVolumeThisStep(dt));
+
     this.elapsedSeconds += dt;
     this.stepCount++;
+  }
+
+  /** Soil cut by every implement on every machine during this step, m³. */
+  private cutVolumeThisStep(dt: number): number {
+    let total = 0;
+    for (const vehicle of this.vehicles) {
+      for (const state of Object.values(vehicle.state.implementStates)) {
+        if (state.kind === 'blade') total += state.cutRate * dt;
+      }
+    }
+    return total;
   }
 }

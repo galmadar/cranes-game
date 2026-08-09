@@ -120,7 +120,8 @@ export class Hud {
       el(
         'div',
         'legend-row',
-        '<kbd>Esc</kbd> <span class="tag">settings — tune every number live</span>',
+        '<kbd>G</kbd> <span class="tag">toggle grade overlay</span> ' +
+          '<kbd>Esc</kbd> <span class="tag">settings</span>',
       ),
     );
     help.appendChild(

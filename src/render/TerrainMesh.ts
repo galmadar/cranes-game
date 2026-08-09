@@ -8,8 +8,14 @@
  */
 
 import * as THREE from 'three';
+import { targetAt, type JobSite } from '../sim/job/JobSite';
 import { MATERIAL_LIST } from '../sim/materials';
 import type { Rect, Terrain } from '../sim/Terrain';
+
+/** Deviation beyond tolerance at which the overlay reaches full strength, m. */
+const OVERLAY_RANGE = 0.7;
+/** How far the tint can push the underlying material colour, 0..1. */
+const OVERLAY_STRENGTH = 0.82;
 
 /** Per-cell brightness jitter so large flat areas don't read as dead colour. */
 function hashUnit(cx: number, cz: number): number {
@@ -30,6 +36,14 @@ export class TerrainMesh {
 
   /** MaterialId -> linear-space RGB, pre-converted once. */
   private readonly palette: Float32Array;
+
+  /** Job overlay colours, linear space. */
+  private readonly tooHigh = new THREE.Color();
+  private readonly tooLow = new THREE.Color();
+  private readonly siteEdge = new THREE.Color();
+
+  private site: JobSite | null = null;
+  private overlayEnabled = true;
 
   constructor(terrain: Terrain) {
     this.width = terrain.width;
@@ -97,6 +111,13 @@ export class TerrainMesh {
       this.palette[def.id * 3 + 2] = scratch.b;
     }
 
+    // Orange / blue rather than red / green: this is the one piece of UI the
+    // player reads constantly, and red-green is the colour pair most people
+    // with colour blindness cannot separate.
+    this.tooHigh.setRGB(0.93, 0.42, 0.22, THREE.SRGBColorSpace);
+    this.tooLow.setRGB(0.24, 0.58, 0.88, THREE.SRGBColorSpace);
+    this.siteEdge.setRGB(1.0, 0.81, 0.33, THREE.SRGBColorSpace);
+
     const material = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 0.94,
@@ -113,9 +134,19 @@ export class TerrainMesh {
   }
 
   /** Apply any pending terrain edits. Cheap when nothing changed. */
-  sync(terrain: Terrain): void {
+  sync(terrain: Terrain, site: JobSite | null = null): void {
+    this.site = site;
     const rect = terrain.consumeDirty();
     if (rect) this.updateRegion(terrain, rect);
+  }
+
+  /** Caller must dirty the site bounds afterwards so the colours refresh. */
+  setOverlayEnabled(enabled: boolean): void {
+    this.overlayEnabled = enabled;
+  }
+
+  get isOverlayEnabled(): boolean {
+    return this.overlayEnabled;
   }
 
   private updateRegion(terrain: Terrain, rect: Rect): void {
@@ -167,6 +198,37 @@ export class TerrainMesh {
           r = (r + (grey - r) * 0.45) * (1 - k * 0.55);
           g = (g + (grey - g) * 0.45) * (1 - k * 0.55);
           b = (b + (grey - b) * 0.45) * (1 - k * 0.5);
+        }
+
+        // --- job overlay -------------------------------------------------
+        // Ground that is ON GRADE is left completely alone. The overlay drains
+        // away as the player succeeds, so a finished pad heals back into
+        // ordinary terrain and completion is something you watch happen rather
+        // than a number you read.
+        const site = this.overlayEnabled ? this.site : null;
+        if (site) {
+          const target = targetAt(site, cx, cz);
+          if (target !== null) {
+            const error = terrain.height[i] - target;
+            const excess = Math.abs(error) - site.tolerance;
+
+            if (excess > 0) {
+              const k = Math.min(1, excess / OVERLAY_RANGE) * OVERLAY_STRENGTH;
+              const tint = error > 0 ? this.tooHigh : this.tooLow;
+              r += (tint.r - r) * k;
+              g += (tint.g - g) * k;
+              b += (tint.b - b) * k;
+            }
+
+            // Mark the boundary so the site stays findable even once it is
+            // finished and every cell inside has gone back to normal.
+            const b0 = site.bounds;
+            if (cx === b0.x0 || cx === b0.x1 || cz === b0.z0 || cz === b0.z1) {
+              r += (this.siteEdge.r - r) * 0.65;
+              g += (this.siteEdge.g - g) * 0.65;
+              b += (this.siteEdge.b - b) * 0.65;
+            }
+          }
         }
 
         colors[o + 0] = r;

@@ -89,9 +89,25 @@ export class Renderer {
     this.resize();
   }
 
+  /** Show or hide the cut/fill overlay, refreshing the site's colours. */
+  toggleJobOverlay(world: World): boolean {
+    const enabled = !this.terrainMesh.isOverlayEnabled;
+    this.terrainMesh.setOverlayEnabled(enabled);
+
+    const bounds = world.job?.site.bounds;
+    if (bounds) world.terrain.markDirty(bounds.x0, bounds.z0, bounds.x1, bounds.z1);
+    return enabled;
+  }
+
+  /** Repaint the whole site — call when a job starts or changes. */
+  refreshJobSite(world: World): void {
+    const bounds = world.job?.site.bounds;
+    if (bounds) world.terrain.markDirty(bounds.x0, bounds.z0, bounds.x1, bounds.z1);
+  }
+
   /** Pull pending simulation changes into the scene graph. */
   sync(world: World): void {
-    this.terrainMesh.sync(world.terrain);
+    this.terrainMesh.sync(world.terrain, world.job?.site ?? null);
 
     world.vehicles.forEach((vehicle, index) => {
       this.vehicleViews.get(index)?.sync(vehicle.state);

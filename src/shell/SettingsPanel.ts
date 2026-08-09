@@ -34,6 +34,9 @@ export class SettingsPanel {
   /** Notified when the drawer opens or closes, so the HUD can get out of the way. */
   onVisibilityChange: ((open: boolean) => void) | null = null;
 
+  /** Notified after any value changes — the grade overlay needs a repaint. */
+  onChange: (() => void) | null = null;
+
   constructor(parent: HTMLElement, groups: SettingGroup[]) {
     this.groups = groups;
 
@@ -101,6 +104,7 @@ export class SettingsPanel {
       if (syncRange) range.value = String(clamped);
       if (syncNumber) number.value = String(round(clamped, setting.step));
       this.save();
+      this.onChange?.();
     };
 
     range.addEventListener('input', () => apply(Number(range.value), false, true));
@@ -148,6 +152,7 @@ export class SettingsPanel {
   private resetAll(): void {
     this.eachSetting((s) => s.reset());
     this.syncInputs();
+    this.onChange?.();
     try {
       localStorage.removeItem(STORAGE_KEY);
     } catch {

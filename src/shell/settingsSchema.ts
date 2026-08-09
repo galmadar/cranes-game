@@ -7,6 +7,7 @@
  * immediacy is the entire point: these numbers can only be judged by driving.
  */
 
+import type { JobSite } from '../sim/job/JobSite';
 import { DEFAULT_TUNING, TUNING } from '../sim/tuning';
 import type { BladeSpec, VehicleDefinition } from '../sim/vehicle/types';
 
@@ -32,7 +33,7 @@ function bladeOf(def: VehicleDefinition): BladeSpec | undefined {
   return def.implements.find((i): i is BladeSpec => i.kind === 'blade');
 }
 
-export function buildSettings(def: VehicleDefinition): SettingGroup[] {
+export function buildSettings(def: VehicleDefinition, site?: JobSite): SettingGroup[] {
   const loco = def.locomotion;
   const blade = bladeOf(def);
 
@@ -64,6 +65,20 @@ export function buildSettings(def: VehicleDefinition): SettingGroup[] {
         num('bladeMaxHeight', 'Max lift', 0.2, 4, 0.05, 'm', blade, bladeDefaults, 'maxHeight'),
         num('bladeWidth', 'Width', 1, 8, 0.1, 'm', blade, bladeDefaults, 'width'),
         num('bladeReach', 'Reach', 1, 6, 0.1, 'm', blade, bladeDefaults, 'reach', 'Distance ahead of the machine'),
+      ],
+    });
+  }
+
+  if (site) {
+    // How hard the job should be is a question only playing can answer, so it
+    // is a knob rather than a constant.
+    const siteDefaults = { ...site };
+    groups.push({
+      title: 'Contract',
+      settings: [
+        num('jobTolerance', 'Grade tolerance', 0.05, 1, 0.01, 'm', site, siteDefaults, 'tolerance', 'How close to target counts as done. Repaints the overlay'),
+        num('jobRequiredAccuracy', 'Required accuracy', 0.5, 1, 0.01, '', site, siteDefaults, 'requiredAccuracy', 'Share of the site that must be on grade to finish'),
+        num('jobParSeconds', 'Par time', 30, 900, 10, 's', site, siteDefaults, 'parSeconds'),
       ],
     });
   }
