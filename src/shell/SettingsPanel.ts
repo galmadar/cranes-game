@@ -12,7 +12,13 @@
 
 import type { SettingDef, SettingGroup } from './settingsSchema';
 
-const STORAGE_KEY = 'cranes-tuning-v1';
+/**
+ * Bumped when the storage FORMAT changes. v1 snapshotted every value, which
+ * meant a saved session pinned the game to old defaults forever — a retuned
+ * par time or tolerance could never reach a player who had touched a slider
+ * once. v2 stores only genuine overrides.
+ */
+const STORAGE_KEY = 'cranes-tuning-v2';
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -170,9 +176,11 @@ export class SettingsPanel {
   }
 
   private save(): void {
+    // Only what differs from source. Anything left out picks up the shipped
+    // default on the next load, so retuning the game still reaches players.
     const data: Record<string, number> = {};
     this.eachSetting((s) => {
-      data[s.id] = s.get();
+      if (s.get() !== s.defaultValue) data[s.id] = s.get();
     });
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));

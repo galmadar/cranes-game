@@ -14,6 +14,8 @@ import type { BladeSpec, VehicleDefinition } from '../sim/vehicle/types';
 export interface SettingDef {
   id: string;
   label: string;
+  /** The value that ships in source, so overrides can be told from defaults. */
+  defaultValue: number;
   hint?: string;
   min: number;
   max: number;
@@ -114,6 +116,7 @@ function num<T extends object, K extends keyof T>(
   return {
     id,
     label,
+    defaultValue: fallback,
     min,
     max,
     step,

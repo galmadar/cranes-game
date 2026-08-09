@@ -36,7 +36,8 @@ const site = createPadLevelJob(terrain);
 // Built before the machine so saved tuning is applied to the vehicle
 // definition and the contract before anything reads them.
 const settings = new SettingsPanel(document.body, buildSettings(entry.def, site));
-const vehicle = world.addVehicle(new Vehicle(entry.def, map.spawn));
+// A contract sets where you start; free roam falls back to the map spawn.
+const vehicle = world.addVehicle(new Vehicle(entry.def, site.spawn ?? map.spawn));
 
 world.job = new JobRunner(terrain, site);
 

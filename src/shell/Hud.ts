@@ -153,7 +153,7 @@ export class Hud {
     // Names the action rather than the number: the player should not have to
     // work out that "+0.4" means "you are standing on soil that must come off".
     if (stats.gradeAtBlade === null) {
-      this.set('grade', '—');
+      this.set('grade', 'off site');
     } else {
       const g = stats.gradeAtBlade;
       this.set(

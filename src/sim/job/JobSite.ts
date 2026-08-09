@@ -11,6 +11,8 @@
  * an offset.
  */
 
+import type { Vec3 } from '../math/Vec';
+import { vec3 } from '../math/Vec';
 import type { Rect, Terrain } from '../Terrain';
 
 export interface JobSite {
@@ -31,6 +33,15 @@ export interface JobSite {
   requiredAccuracy: number;
   /** Seconds the job is expected to take. Beating it is worth stars later. */
   parSeconds: number;
+
+  /**
+   * Where the machine starts, if the job overrides the map's spawn.
+   *
+   * A contract you cannot find is not a contract. Dropping the player 30m away
+   * from a 14m site on a 128m map turns "level this pad" into "locate this
+   * pad", which is a different and much worse game.
+   */
+  readonly spawn?: { position: Vec3; heading: number };
 }
 
 export function siteWidth(site: JobSite): number {
@@ -65,6 +76,8 @@ export interface FlatPadOptions {
   tolerance: number;
   requiredAccuracy: number;
   parSeconds: number;
+  /** Metres back from the site's south edge to park the machine. */
+  spawnOffset?: number;
   /**
    * Target elevation. Defaults to the MEAN of the ground currently inside the
    * site, which makes cut and fill balance: every m³ that has to come off a
@@ -89,6 +102,13 @@ export function createFlatPad(terrain: Terrain, options: FlatPadOptions): JobSit
     height = sum / (w * d);
   }
 
+  // Park just outside the southern edge, nose pointing into the work.
+  const back = options.spawnOffset ?? 8;
+  const spawn = {
+    position: vec3(options.centerX, 0, options.centerZ - options.depth / 2 - back),
+    heading: 0, // +Z, facing the site
+  };
+
   return {
     id: options.id,
     title: options.title,
@@ -98,6 +118,7 @@ export function createFlatPad(terrain: Terrain, options: FlatPadOptions): JobSit
     tolerance: options.tolerance,
     requiredAccuracy: options.requiredAccuracy,
     parSeconds: options.parSeconds,
+    spawn,
   };
 }
 

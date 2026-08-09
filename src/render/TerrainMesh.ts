@@ -17,6 +17,63 @@ const OVERLAY_RANGE = 0.7;
 /** How far the tint can push the underlying material colour, 0..1. */
 const OVERLAY_STRENGTH = 0.82;
 
+/**
+ * Procedural surface detail, injected into the standard material.
+ *
+ * Vertex colours alone give every cell one exact tone, so a graded pad is a
+ * single flat slab of colour and the whole yard reads as painted plastic. Three
+ * octaves of world-space noise at ~5m, ~1.5m and ~0.5m break that up, and a
+ * slope term darkens steep faces the way exposed cut faces actually look.
+ *
+ * Done in the shader rather than with a texture: still zero external assets
+ * (NFR-7), and it tiles perfectly across a 128m map at any zoom.
+ */
+function addSurfaceDetail(material: THREE.MeshStandardMaterial): void {
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('void main() {', 'varying vec3 vDetailPos;\nvarying float vSlope;\nvoid main() {')
+      .replace(
+        '#include <beginnormal_vertex>',
+        '#include <beginnormal_vertex>\n  vSlope = 1.0 - clamp(objectNormal.y, 0.0, 1.0);',
+      )
+      .replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\n  vDetailPos = (modelMatrix * vec4(transformed, 1.0)).xyz;',
+      );
+
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        'void main() {',
+        `varying vec3 vDetailPos;
+         varying float vSlope;
+         float dHash(vec2 p) {
+           p = fract(p * vec2(127.31, 311.7));
+           p += dot(p, p + 47.19);
+           return fract(p.x * p.y);
+         }
+         float dNoise(vec2 p) {
+           vec2 i = floor(p);
+           vec2 f = fract(p);
+           f = f * f * (3.0 - 2.0 * f);
+           return mix(mix(dHash(i), dHash(i + vec2(1.0, 0.0)), f.x),
+                      mix(dHash(i + vec2(0.0, 1.0)), dHash(i + vec2(1.0, 1.0)), f.x), f.y);
+         }
+         void main() {`,
+      )
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+         {
+           vec2 p = vDetailPos.xz;
+           float grain = dNoise(p * 0.2) * 0.5 + dNoise(p * 0.7) * 0.32 + dNoise(p * 2.1) * 0.18;
+           diffuseColor.rgb *= 0.84 + 0.32 * grain;
+           // Steep ground is scoured and shaded; flat ground catches the light.
+           diffuseColor.rgb *= 1.0 - vSlope * 0.3;
+         }`,
+      );
+  };
+}
+
 /** Per-cell brightness jitter so large flat areas don't read as dead colour. */
 function hashUnit(cx: number, cz: number): number {
   let h = (Math.imul(cx, 374761393) + Math.imul(cz, 668265263)) | 0;
@@ -123,6 +180,7 @@ export class TerrainMesh {
       roughness: 0.94,
       metalness: 0.0,
     });
+    addSurfaceDetail(material);
 
     this.object = new THREE.Mesh(this.geometry, material);
     this.object.name = 'terrain';
