@@ -25,6 +25,11 @@ export function createPadLevelJob(terrain: Terrain): JobSite {
     width: 14,
     depth: 14,
 
+    // Sit the grade low in the existing ground so the job is mostly CUTTING.
+    // A balanced cut/fill pad demands you place almost every scoop you lift,
+    // which measured as unwinnable for a first contract.
+    targetQuantile: 0.2,
+
     // A FIRST contract, sized to teach rather than to test: about 41 m3 of
     // earth, two minutes of work. The 22m version was 185 m3 and roughly ten
     // minutes, which read as "impossible" long before it read as "hard".

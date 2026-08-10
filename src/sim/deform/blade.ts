@@ -53,11 +53,21 @@ export interface BladeCutParams {
   edgeY: number;
   /** m³ the blade holds before soil rolls off the ends. */
   capacity: number;
+  /**
+   * True when the cutting edge is at or below the machine's own ground line —
+   * i.e. the blade is actually working the ground rather than riding over it.
+   *
+   * Only an engaged blade fills. A raised blade passing over a hollow must not
+   * suck the pile backwards into it.
+   */
+  engaged?: boolean;
 }
 
 export interface BladeCutResult {
   /** m³ removed from the ground this tick. */
   volumeCut: number;
+  /** m³ released into hollows under the blade this tick. */
+  volumeFilled: number;
   /** m³ heaped against the blade. */
   prowVolume: number;
   /** 0..1 drag on the chassis from load and from refusing rock. */
@@ -200,6 +210,66 @@ function fillLowestFirst(
   return volume - remaining;
 }
 
+/** Pour into cells lowest-first, but never raise any of them above `level`. */
+function fillToLevel(
+  terrain: Terrain,
+  cells: readonly number[],
+  volume: number,
+  level: number,
+): number {
+  const height = terrain.height;
+  const area = terrain.cellArea;
+  const sorted = [...cells].sort((a, b) => height[a] - height[b]);
+
+  let remaining = volume;
+  let placed = 0;
+  for (const cell of sorted) {
+    if (remaining <= 1e-12) break;
+    const room = (level - height[cell]) * area;
+    if (room <= 0) continue;
+    const give = Math.min(room, remaining);
+    height[cell] += give / area;
+    terrain.disturbance[cell] = 255;
+    remaining -= give;
+    placed += give;
+  }
+  return placed;
+}
+
+/**
+ * Take up to `wanted` m³ off the tallest cells, never cutting below `floor`.
+ *
+ * The mirror of `fillLowestFirst`, and the thing that makes GRADING possible.
+ * Without it the blade can only ever cut and shove forward: a hollow stays a
+ * hollow no matter how much soil is heaped in front of the machine, because
+ * there is no mechanism for the load to come off the blade and go into the
+ * low ground it is standing over.
+ */
+function takeFromHighest(
+  terrain: Terrain,
+  cells: readonly number[],
+  wanted: number,
+  floor: number,
+): number {
+  if (cells.length === 0 || wanted <= 0) return 0;
+
+  const height = terrain.height;
+  const area = terrain.cellArea;
+  // Tallest first.
+  const sorted = [...cells].sort((a, b) => height[b] - height[a]);
+
+  let taken = 0;
+  for (const cell of sorted) {
+    if (taken >= wanted) break;
+    const available = (height[cell] - floor) * area;
+    if (available <= 0) continue;
+    const grab = Math.min(available, wanted - taken);
+    height[cell] -= grab / area;
+    taken += grab;
+  }
+  return taken;
+}
+
 /** Zone minus a set of cells. The bounding rect is kept (it only shrinks). */
 function excluding(zone: Zone, exclude: ReadonlySet<number>): Zone {
   if (zone.cells.length === 0 || exclude.size === 0) return zone;
@@ -267,13 +337,46 @@ export function applyBladeCut(params: BladeCutParams): BladeCutResult {
     halfWidth,
   );
 
-  // --- 1. cut ---------------------------------------------------------------
+  // Undisturbed ground beyond where the prow will sit, used as the grade datum.
+  // Needed before the cut pass so engagement can be judged against real ground.
+  const preDepositHalf = Math.max(params.thickness * 1.6, terrain.cellSize);
+  const referenceOffset = halfThickness + preDepositHalf * 2 + terrain.cellSize;
+  const referenceZone = collectOrientedRect(
+    terrain,
+    params.centerX + fx * referenceOffset,
+    params.centerZ + fz * referenceOffset,
+    fx,
+    fz,
+    rx,
+    rz,
+    terrain.cellSize * 0.55,
+    halfWidth,
+  );
+  const grade = meanHeight(terrain, referenceZone.cells);
+  const datum = Math.max(Number.isFinite(grade) ? grade : edgeY, edgeY);
+
+  // --- 1. cut, and note what is short of grade -------------------------------
   let volumeCut = 0;
   let blocked = false;
+  let deficit = 0;
+  let contact = false;
   const cutByMaterial = new Map<number, number>();
+  const hollows: number[] = [];
 
   for (const i of cutZone.cells) {
     const h = terrain.height[i];
+
+    if (h < edgeY - CUT_EPSILON) {
+      // Below the cutting edge: ground the blade could FILL — but only as deep
+      // as the mouldboard itself. Material cannot feed out of thin air into a
+      // hollow the blade is flying well above.
+      if (edgeY - h <= params.bladeHeight) {
+        deficit += (edgeY - h) * terrain.cellArea;
+        hollows.push(i);
+      }
+      continue;
+    }
+    contact = true;
     if (h <= edgeY + CUT_EPSILON) continue;
 
     const material = materialOf(terrain.material[i]);
@@ -314,26 +417,49 @@ export function applyBladeCut(params: BladeCutParams): BladeCutResult {
     cutCells,
   );
 
-  // Undisturbed ground just beyond the prow, used as the grade datum. It has
-  // to be a separate zone: filling lowest-first levels the deposit zone flat,
-  // so there is no untouched row left inside it to read grade from.
-  const referenceOffset = depositOffset + depositHalf + terrain.cellSize;
-  const referenceZone = collectOrientedRect(
-    terrain,
-    params.centerX + fx * referenceOffset,
-    params.centerZ + fz * referenceOffset,
-    fx,
-    fz,
-    rx,
-    rz,
-    terrain.cellSize * 0.55,
-    halfWidth,
-  );
-
-  const grade = meanHeight(terrain, referenceZone.cells);
-  const datum = Math.max(Number.isFinite(grade) ? grade : edgeY, edgeY);
-
   const prowBefore = volumeAbove(terrain, depositZone.cells, datum);
+
+  // --- 2a. FILL: release soil into hollows under the blade -------------------
+  //
+  // This is what makes grading possible at all. Without it the blade can only
+  // cut and shove forward, so a perfect operator shaves every high spot, pushes
+  // the spoil off the far edge, and leaves every hollow exactly as deep as it
+  // started. Measured: accuracy plateaued at 49% with 38 m3 of unfilled hollow.
+  //
+  // Cut soil goes into the holes first; if that is not enough, the pile in
+  // front feeds back under the cutting edge, which is how a real blade fills.
+  //
+  // Engagement is judged against the ground, not against the blade's lever
+  // position. Reading it off blade height was exactly backwards: a machine
+  // standing IN a hollow holds its blade ABOVE its own tracks to reach design
+  // grade, which is precisely when it should be filling.
+  let volumeFilled = 0;
+  const engaged =
+    params.engaged === false
+      ? false
+      : contact || (Number.isFinite(grade) && grade >= edgeY - 0.05);
+
+  if (engaged && deficit > 0 && hollows.length > 0) {
+    let supply = Math.min(volumeCut, deficit);
+    volumeCut -= supply;
+
+    const stillShort = deficit - supply;
+    if (stillShort > 0) {
+      // Never rob the ground ahead below grade — only take the heaped prow.
+      supply += takeFromHighest(
+        terrain,
+        depositZone.cells,
+        stillShort,
+        Math.max(edgeY, datum),
+      );
+    }
+
+    if (supply > 0) {
+      volumeFilled = fillToLevel(terrain, hollows, supply, edgeY);
+      // Anything the hollows could not take goes back on the pile.
+      volumeCut += supply - volumeFilled;
+    }
+  }
 
   let sideZones: Zone[] = [];
   let deposited = 0;
@@ -401,9 +527,9 @@ export function applyBladeCut(params: BladeCutParams): BladeCutResult {
   let region = unionRect(cutZone.rect, depositZone.rect);
   for (const zone of sideZones) region = unionRect(region, zone.rect);
   // Only when soil actually moved — see the note in slump.ts.
-  if (region && volumeCut > 0) {
+  if (region && (volumeCut > 0 || volumeFilled > 0)) {
     terrain.markDirty(region.x0, region.z0, region.x1, region.z1);
   }
 
-  return { volumeCut, prowVolume, resistance, blocked, region };
+  return { volumeCut, volumeFilled, prowVolume, resistance, blocked, region };
 }

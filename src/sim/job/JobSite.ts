@@ -79,11 +79,23 @@ export interface FlatPadOptions {
   /** Metres back from the site's south edge to park the machine. */
   spawnOffset?: number;
   /**
-   * Target elevation. Defaults to the MEAN of the ground currently inside the
-   * site, which makes cut and fill balance: every m³ that has to come off a
-   * high spot has a low spot waiting for it. That keeps the job solvable with
-   * a bulldozer alone — no importing or dumping soil required.
+   * Target elevation, given as a quantile of the ground already inside the
+   * site. 0 is the lowest point, 1 the highest, 0.5 the median.
+   *
+   * This is the difficulty dial that matters most, and it is not obvious why.
+   *
+   * At 0.5 cut and fill balance exactly, which sounds elegant and is brutal:
+   * finishing requires placing nearly every scoop you cut into a hollow, so
+   * any spoil pushed off the edge makes the job UNWINNABLE. Measured on a
+   * balanced pad, a perfect operator plateaued at 50% — the pit floor sat
+   * 0.31m low and there was no soil left on site to fill it with.
+   *
+   * Low values make the job cut-dominant: shave everything down to grade and
+   * shove the excess clear. That is the skill you learn first. Balanced
+   * cut-and-fill is the advanced contract, not the tutorial.
    */
+  targetQuantile?: number;
+  /** Absolute target elevation, overriding `targetQuantile`. */
   targetHeight?: number;
 }
 
@@ -95,11 +107,13 @@ export function createFlatPad(terrain: Terrain, options: FlatPadOptions): JobSit
 
   let height = options.targetHeight;
   if (height === undefined) {
-    let sum = 0;
+    const samples: number[] = [];
     for (let cz = bounds.z0; cz <= bounds.z1; cz++) {
-      for (let cx = bounds.x0; cx <= bounds.x1; cx++) sum += terrain.getHeight(cx, cz);
+      for (let cx = bounds.x0; cx <= bounds.x1; cx++) samples.push(terrain.getHeight(cx, cz));
     }
-    height = sum / (w * d);
+    samples.sort((a, b) => a - b);
+    const q = Math.min(1, Math.max(0, options.targetQuantile ?? 0.5));
+    height = samples[Math.min(samples.length - 1, Math.round(q * (samples.length - 1)))];
   }
 
   // Park just outside the southern edge, nose pointing into the work.

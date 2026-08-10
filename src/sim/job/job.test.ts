@@ -50,28 +50,76 @@ describe('JobSite', () => {
     expect(targetAt(site, site.bounds.x0, site.bounds.z0)).toBe(0);
   });
 
-  it('defaults its target to the mean of the ground inside it', () => {
-    const t = flatTerrain(0);
-    // Half the world high, half low — mean over the pad should land between.
-    for (let cz = 0; cz < t.depth; cz++) {
-      for (let cx = 0; cx < t.width; cx++) {
-        t.height[t.index(cx, cz)] = t.cellToWorldX(cx) < 0 ? 2 : 4;
+  describe('target elevation from a quantile', () => {
+    /** Ground stepped 1..5m across the site, so quantiles are easy to reason about. */
+    const stepped = (quantile?: number) => {
+      const t = flatTerrain(0);
+      for (let cz = 0; cz < t.depth; cz++) {
+        for (let cx = 0; cx < t.width; cx++) {
+          const step = Math.floor(((cx % 20) / 20) * 5) + 1;
+          t.height[t.index(cx, cz)] = step;
+        }
       }
-    }
-    const site = createFlatPad(t, {
-      id: 'm',
-      title: '',
-      brief: '',
-      centerX: 0,
-      centerZ: 0,
-      width: 10,
-      depth: 10,
-      tolerance: 0.1,
-      requiredAccuracy: 0.9,
-      parSeconds: 60,
+      const site = createFlatPad(t, {
+        id: 'q',
+        title: '',
+        brief: '',
+        centerX: 0,
+        centerZ: 0,
+        width: 10,
+        depth: 10,
+        tolerance: 0.1,
+        requiredAccuracy: 0.9,
+        parSeconds: 60,
+        ...(quantile === undefined ? {} : { targetQuantile: quantile }),
+      });
+      return { t, site, target: targetAt(site, site.bounds.x0, site.bounds.z0)! };
+    };
+
+    it('sits at the lowest ground for quantile 0', () => {
+      const { t, site, target } = stepped(0);
+      let min = Infinity;
+      for (let cz = site.bounds.z0; cz <= site.bounds.z1; cz++) {
+        for (let cx = site.bounds.x0; cx <= site.bounds.x1; cx++) {
+          min = Math.min(min, t.getHeight(cx, cz));
+        }
+      }
+      expect(target).toBeCloseTo(min, 6);
     });
-    expect(targetAt(site, site.bounds.x0, site.bounds.z0)).toBeGreaterThan(2);
-    expect(targetAt(site, site.bounds.x0, site.bounds.z0)).toBeLessThan(4);
+
+    it('sits at the highest ground for quantile 1', () => {
+      const { t, site, target } = stepped(1);
+      let max = -Infinity;
+      for (let cz = site.bounds.z0; cz <= site.bounds.z1; cz++) {
+        for (let cx = site.bounds.x0; cx <= site.bounds.x1; cx++) {
+          max = Math.max(max, t.getHeight(cx, cz));
+        }
+      }
+      expect(target).toBeCloseTo(max, 6);
+    });
+
+    it('rises monotonically with the quantile', () => {
+      const heights = [0, 0.25, 0.5, 0.75, 1].map((q) => stepped(q).target);
+      for (let i = 1; i < heights.length; i++) {
+        expect(heights[i]).toBeGreaterThanOrEqual(heights[i - 1]);
+      }
+      expect(heights[4]).toBeGreaterThan(heights[0]);
+    });
+
+    // A low quantile leaves almost nothing to fill, which is what makes a job
+    // survivable when spoil gets pushed off the edge.
+    it('makes the job cut-dominant at a low quantile', () => {
+      const low = stepped(0.15);
+      const p = evaluateJob(low.t, low.site);
+      expect(p.cutRemaining).toBeGreaterThan(p.fillRemaining * 5);
+    });
+
+    it('balances cut against fill near the median', () => {
+      const mid = stepped(0.5);
+      const p = evaluateJob(mid.t, mid.site);
+      expect(p.cutRemaining).toBeGreaterThan(0);
+      expect(p.fillRemaining).toBeGreaterThan(0);
+    });
   });
 
   it('is clamped to the terrain when it would overhang the map', () => {
