@@ -17,6 +17,8 @@ const BladeAction = {
   Raise: 'bladeRaise',
   Lower: 'bladeLower',
   GradeHold: 'bladeGradeHold',
+  PitchBack: 'bladePitchBack',
+  PitchForward: 'bladePitchForward',
 } as const;
 
 export const bulldozerDef: VehicleDefinition = {
@@ -59,6 +61,18 @@ export const bulldozerDef: VehicleDefinition = {
       moveSpeed: 1.15,
 
       capacity: 3.4,
+
+      // About ±11°, which is roughly the adjustment range of a real dozer's
+      // pitch rams. Wide enough to feel, narrow enough that neutral stays the
+      // sane default rather than a trap.
+      pitch: {
+        backAction: BladeAction.PitchBack,
+        forwardAction: BladeAction.PitchForward,
+        min: -0.2,
+        max: 0.2,
+        rest: 0,
+        speed: 0.35,
+      },
     },
   ],
 
@@ -70,6 +84,8 @@ export const bulldozerDef: VehicleDefinition = {
     [BladeAction.Raise]: ['KeyR'],
     [BladeAction.Lower]: ['KeyF'],
     [BladeAction.GradeHold]: ['KeyH'],
+    [BladeAction.PitchBack]: ['KeyT'],
+    [BladeAction.PitchForward]: ['KeyY'],
   },
 };
 
@@ -82,4 +98,6 @@ export const BULLDOZER_CONTROL_HINTS: readonly { action: string; label: string }
   { action: BladeAction.Raise, label: 'Blade up' },
   { action: BladeAction.Lower, label: 'Blade down' },
   { action: BladeAction.GradeHold, label: 'Hold grade (auto)' },
+  { action: BladeAction.PitchBack, label: 'Pitch back — carry more' },
+  { action: BladeAction.PitchForward, label: 'Pitch forward — bite harder' },
 ];

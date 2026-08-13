@@ -12,7 +12,7 @@
 
 import { actionValue } from '../../input/actions';
 import { applyBladeCut } from '../../deform/blade';
-import { clamp, moveToward } from '../../math/Vec';
+import { clamp, lerp, moveToward } from '../../math/Vec';
 import type { BladeSpec, BladeState } from '../types';
 import type { Implement, ImplementContext } from './Implement';
 
@@ -38,6 +38,25 @@ const GRADE_HOLD_GAIN = 3;
 /** Travel still unused at each end before hold reports itself saturated, metres. */
 const SATURATION_EPSILON = 1e-3;
 
+/** Capacity multiplier at full back pitch — the face rolls material up itself. */
+const PITCH_CARRY_BACK = 1.5;
+/** Capacity multiplier at full forward pitch — material rolls over the top. */
+const PITCH_CARRY_FORWARD = 0.65;
+
+/** Bite-depth multipliers at the two extremes of pitch. */
+const PITCH_BITE_BACK = 0.6;
+const PITCH_BITE_FORWARD = 1.6;
+
+/**
+ * Effective lever arm for the cutting edge, as a fraction of blade height.
+ *
+ * Pitching the mouldboard about its top mount swings the edge down and forward,
+ * which is the real reason a forward-pitched blade digs in. Modelled as a pure
+ * elevation offset: the fore-aft component is far smaller than a terrain cell
+ * and would only add coupling nobody could feel.
+ */
+const PITCH_EDGE_LEVER = 0.6;
+
 export class BladeImplement implements Implement {
   readonly id: string;
   readonly spec: BladeSpec;
@@ -61,7 +80,22 @@ export class BladeImplement implements Implement {
       blocked: false,
       gradeHold: false,
       gradeHoldSaturated: false,
+      pitch: this.spec.pitch ? this.spec.pitch.rest : 0,
+      effectiveCapacity: this.spec.capacity,
     };
+  }
+
+  /** -1 fully back, 0 neutral, +1 fully forward. */
+  private normalizedPitch(pitch: number): number {
+    const spec = this.spec.pitch;
+    if (!spec) return 0;
+    const span = pitch < 0 ? -spec.min : spec.max;
+    return span > 0 ? clamp(pitch / span, -1, 1) : 0;
+  }
+
+  /** How far pitch drops the cutting edge below the lever position, metres. */
+  private edgeDrop(pitch: number): number {
+    return Math.sin(pitch) * this.spec.height * PITCH_EDGE_LEVER;
   }
 
   update(ctx: ImplementContext): void {
@@ -86,7 +120,16 @@ export class BladeImplement implements Implement {
       );
     }
 
+    this.updatePitch(ctx, state);
     this.updateGradeHold(ctx, state, pos.x + fx * this.spec.reach, pos.z + fz * this.spec.reach);
+
+    // Pitch trades bite against carry, which is the entire point of the axis:
+    // roll the face back to hold a load across the site, tip it forward to
+    // take a real cut. Neutral leaves both at the machine's rated numbers.
+    const p = this.normalizedPitch(state.pitch);
+    const carry = p <= 0 ? lerp(1, PITCH_CARRY_BACK, -p) : lerp(1, PITCH_CARRY_FORWARD, p);
+    const bite = p <= 0 ? lerp(1, PITCH_BITE_BACK, -p) : lerp(1, PITCH_BITE_FORWARD, p);
+    state.effectiveCapacity = this.spec.capacity * carry;
 
     // --- dig -----------------------------------------------------------------
 
@@ -103,10 +146,10 @@ export class BladeImplement implements Implement {
       centerZ: pos.z + fz * this.spec.reach,
       heading: ctx.vehicle.heading,
       width: this.spec.width,
-      bladeHeight: this.spec.height,
+      bladeHeight: this.spec.height * bite,
       thickness: this.spec.thickness,
-      edgeY: pos.y + state.height,
-      capacity: this.spec.capacity,
+      edgeY: pos.y + state.height - this.edgeDrop(state.pitch),
+      capacity: state.effectiveCapacity,
     });
 
     state.carriedVolume = result.prowVolume;
@@ -123,6 +166,24 @@ export class BladeImplement implements Implement {
         z1: result.region.z1 + SLUMP_MARGIN,
       });
     }
+  }
+
+  /**
+   * Pitch articulation.
+   *
+   * Deliberately does NOT cancel grade hold, unlike the lift lever. Pitch and
+   * elevation are independent questions — "how aggressively am I cutting" and
+   * "where is the edge" — and wanting to adjust one while the other holds is
+   * the normal case, not an accident.
+   */
+  private updatePitch(ctx: ImplementContext, state: BladeState): void {
+    const spec = this.spec.pitch;
+    if (!spec) return;
+
+    const drive =
+      actionValue(ctx.input, spec.forwardAction) - actionValue(ctx.input, spec.backAction);
+    if (drive === 0) return;
+    state.pitch = clamp(state.pitch + drive * spec.speed * ctx.dt, spec.min, spec.max);
   }
 
   /**
@@ -151,7 +212,9 @@ export class BladeImplement implements Implement {
       // Off a job site there is no design surface, so latch wherever the edge
       // is right now. An absolute lock is what makes free-roam levelling work
       // at all, and it is the same servo either way.
-      if (state.gradeHold) this.holdY = ctx.vehicle.position.y + state.height;
+      if (state.gradeHold) {
+        this.holdY = ctx.vehicle.position.y + state.height - this.edgeDrop(state.pitch);
+      }
     }
     this.holdWasDown = down;
 
@@ -160,8 +223,10 @@ export class BladeImplement implements Implement {
       return;
     }
 
+    // Hold the CUTTING EDGE on grade, not the lever, so re-pitching mid-pass
+    // does not quietly walk the machine off design elevation.
     const target = ctx.gradeAt(edgeX, edgeZ) ?? this.holdY;
-    const wanted = target - ctx.vehicle.position.y;
+    const wanted = target - ctx.vehicle.position.y + this.edgeDrop(state.pitch);
     const reachable = clamp(wanted, this.spec.minHeight, this.spec.maxHeight);
     state.gradeHoldSaturated = Math.abs(reachable - wanted) > SATURATION_EPSILON;
     state.height = moveToward(

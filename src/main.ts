@@ -111,6 +111,8 @@ const loop = new GameLoop({
       bladeHeight: blade ? blade.height : null,
       gradeAtBlade: gradeUnderBlade(),
       carriedVolume: blade ? blade.carriedVolume : null,
+      bladePitch: blade ? blade.pitch : null,
+      bladeCapacity: blade ? blade.effectiveCapacity : null,
       bladeBlocked: blade ? blade.blocked : false,
       gradeHold: blade ? blade.gradeHold : false,
       gradeHoldSaturated: blade ? blade.gradeHoldSaturated : false,

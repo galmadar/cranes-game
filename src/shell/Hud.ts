@@ -29,6 +29,10 @@ export interface HudStats {
   /** Ground height minus target, at the blade. Positive = cut, negative = fill. */
   gradeAtBlade: number | null;
   carriedVolume: number | null;
+  /** Radians. Negative carries, positive bites. */
+  bladePitch: number | null;
+  /** m³ the blade holds at the current pitch. */
+  bladeCapacity: number | null;
   bladeBlocked: boolean;
   gradeHold: boolean;
   gradeHoldSaturated: boolean;
@@ -52,6 +56,7 @@ const ROWS = [
   ['traction', 'Traction'],
   ['blade', 'Blade'],
   ['grade', 'At blade'],
+  ['pitch', 'Pitch'],
   ['carried', 'Pushing'],
   ['load', 'Load'],
   ['fps', 'FPS'],
@@ -174,9 +179,23 @@ export class Hud {
           : `${g > 0 ? 'cut' : 'fill'} ${Math.abs(g).toFixed(2)} m`,
       );
     }
+    // Names the trade rather than the angle: "-0.14 rad" tells the player
+    // nothing about whether the blade is now carrying or cutting.
+    if (stats.bladePitch === null) {
+      this.set('pitch', '—');
+    } else {
+      const deg = (stats.bladePitch * 180) / Math.PI;
+      const mode =
+        Math.abs(deg) < 1 ? 'neutral' : deg < 0 ? 'back · carries' : 'forward · bites';
+      this.set('pitch', `${deg >= 0 ? '+' : ''}${deg.toFixed(0)}° ${mode}`);
+    }
+    // Shown against capacity so the effect of pitch on how much the blade can
+    // hold is visible at the moment it matters — while the load is building.
     this.set(
       'carried',
-      stats.carriedVolume === null ? '—' : `${stats.carriedVolume.toFixed(2)} m³`,
+      stats.carriedVolume === null
+        ? '—'
+        : `${stats.carriedVolume.toFixed(2)} / ${(stats.bladeCapacity ?? 0).toFixed(1)} m³`,
     );
     this.set('load', `${Math.round(stats.load * 100)}%`);
     this.set('fps', stats.fps.toFixed(0));

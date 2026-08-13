@@ -52,6 +52,20 @@ export interface BladeSpec {
    */
   gradeHoldAction?: ActionId;
 
+  /**
+   * Blade pitch — the mouldboard rolling forward and back about its top mount.
+   *
+   * The second axis a real dozer has and a fixed blade does not. Pitched back
+   * the face rolls material up itself and CARRIES far more before it spills;
+   * pitched forward the cutting edge attacks and BITES. That trade is the
+   * whole mechanic, and it is the answer to a blade that keeps dumping its
+   * load: stop cutting so hard, and carry what you already have.
+   *
+   * Optional, like grade control: this is a machine feature, not a fact about
+   * blades, and later it becomes something bought rather than assumed.
+   */
+  pitch?: BladePitchSpec;
+
   /** Cutting-edge width, metres. */
   width: number;
   /** Mouldboard height above the cutting edge, metres. Caps the bite. */
@@ -68,8 +82,19 @@ export interface BladeSpec {
   /** m/s */
   moveSpeed: number;
 
-  /** m³ the blade can carry before soil spills. Unused until M3. */
+  /** m³ the blade can carry before soil spills, at neutral pitch. */
   capacity: number;
+}
+
+export interface BladePitchSpec {
+  backAction: ActionId;
+  forwardAction: ActionId;
+  /** Radians. Negative rolls the face back, positive tips it forward. */
+  min: number;
+  max: number;
+  rest: number;
+  /** rad/s */
+  speed: number;
 }
 
 export type ImplementSpec = BladeSpec;
@@ -99,6 +124,11 @@ export interface BladeState {
    * grade control is broken rather than that the cut needs another layer.
    */
   gradeHoldSaturated: boolean;
+
+  /** Blade pitch in radians. Negative carries, positive bites. */
+  pitch: number;
+  /** m³ the blade holds at the current pitch — `capacity` is the neutral value. */
+  effectiveCapacity: number;
 }
 
 export type ImplementState = BladeState;

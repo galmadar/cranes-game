@@ -71,6 +71,19 @@ export function buildSettings(def: VehicleDefinition, site?: JobSite): SettingGr
     });
   }
 
+  if (blade?.pitch) {
+    const pitch = blade.pitch;
+    const pitchDefaults = { ...pitch };
+    groups.push({
+      title: 'Blade pitch',
+      settings: [
+        num('pitchBack', 'Back limit', -0.6, 0, 0.01, 'rad', pitch, pitchDefaults, 'min', 'Rolled back: carries more, cuts gently'),
+        num('pitchForward', 'Forward limit', 0, 0.6, 0.01, 'rad', pitch, pitchDefaults, 'max', 'Tipped forward: bites deeper, spills sooner'),
+        num('pitchSpeed', 'Pitch speed', 0.05, 2, 0.05, 'rad/s', pitch, pitchDefaults, 'speed'),
+      ],
+    });
+  }
+
   if (site) {
     // How hard the job should be is a question only playing can answer, so it
     // is a knob rather than a constant.
@@ -108,7 +121,9 @@ function num<T extends object, K extends keyof T>(
   step: number,
   unit: string,
   target: T,
-  defaults: Readonly<Record<K, unknown>>,
+  // Partial, because a spec may carry optional feature blocks (pitch, grade
+  // control) and spreading one then yields optional keys.
+  defaults: Readonly<Partial<Record<K, unknown>>>,
   key: K,
   hint?: string,
 ): SettingDef {

@@ -37,7 +37,12 @@ export class VehicleView {
 
     if (this.blade) {
       const bladeState = Object.values(state.implementStates).find((s) => s.kind === 'blade');
-      if (bladeState) this.blade.position.y = this.bladeRestY + bladeState.height;
+      if (bladeState) {
+        this.blade.position.y = this.bladeRestY + bladeState.height;
+        // Positive pitch tips the top of the mouldboard forward (-X rotation),
+        // which is what the sim reads as the edge dropping in to bite.
+        this.blade.rotation.x = -bladeState.pitch;
+      }
     }
   }
 
