@@ -11,12 +11,23 @@ import type { ActionState } from '../../input/actions';
 import type { Rect, Terrain } from '../../Terrain';
 import type { ImplementSpec, ImplementState, VehicleDefinition, VehicleState } from '../types';
 
+/**
+ * Design elevation at a world point, or null where nothing specifies one.
+ *
+ * The implement asks rather than the job telling: grade control is a property
+ * of the machine, and free roam simply answers null everywhere.
+ */
+export type GradeQuery = (x: number, z: number) => number | null;
+
+export const NO_GRADE: GradeQuery = () => null;
+
 export interface ImplementContext {
   dt: number;
   input: ActionState;
   vehicle: VehicleState;
   terrain: Terrain;
   def: VehicleDefinition;
+  gradeAt: GradeQuery;
 
   /**
    * Drag on the chassis, 0..1. A loaded blade slows the machine; a blade

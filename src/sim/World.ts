@@ -9,6 +9,7 @@
 import { relaxSlump } from './deform/slump';
 import { EMPTY_ACTION_STATE, type ActionState } from './input/actions';
 import type { JobRunner } from './job/JobRunner';
+import { targetAtWorld } from './job/JobSite';
 import type { Terrain } from './Terrain';
 import { TUNING } from './tuning';
 import type { Vehicle } from './vehicle/Vehicle';
@@ -59,7 +60,12 @@ export class World {
    */
   step(dt: number, input: ActionState = EMPTY_ACTION_STATE): void {
     for (const vehicle of this.vehicles) {
-      vehicle.update(dt, vehicle === this.activeVehicle ? input : EMPTY_ACTION_STATE, this.terrain);
+      vehicle.update(
+        dt,
+        vehicle === this.activeVehicle ? input : EMPTY_ACTION_STATE,
+        this.terrain,
+        this.gradeAt,
+      );
     }
 
     // FR-3.6 — settle everything that moved, after every machine has had its
@@ -76,6 +82,10 @@ export class World {
     this.elapsedSeconds += dt;
     this.stepCount++;
   }
+
+  /** Design elevation for grade control. Free roam has none, hence null. */
+  private readonly gradeAt = (x: number, z: number): number | null =>
+    this.job ? targetAtWorld(this.terrain, this.job.site, x, z) : null;
 
   /** Soil cut by every implement on every machine during this step, m³. */
   private cutVolumeThisStep(dt: number): number {

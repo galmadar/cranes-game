@@ -16,7 +16,7 @@ export interface Tuning {
   fullBladeResistance: number;
   /** Chassis drag when the blade is buried in something it cannot cut. */
   rockResistance: number;
-  /** Share of an overloaded blade's cut that rolls off the ends. */
+  /** Share of the cut rolling off the ends at double capacity. Ramps from zero. */
   sideSpillFraction: number;
   /** Relaxation passes per simulation step. Higher settles faster, costs more. */
   slumpPasses: number;

@@ -12,7 +12,7 @@
 
 import { actionValue } from '../../input/actions';
 import { applyBladeCut } from '../../deform/blade';
-import { clamp } from '../../math/Vec';
+import { clamp, moveToward } from '../../math/Vec';
 import type { BladeSpec, BladeState } from '../types';
 import type { Implement, ImplementContext } from './Implement';
 
@@ -26,9 +26,26 @@ import type { Implement, ImplementContext } from './Implement';
  */
 const SLUMP_MARGIN = 8;
 
+/**
+ * How much faster the servo drives the blade than the operator's lever.
+ *
+ * Grade control that cannot outrun the terrain is worse than none: the blade
+ * sags into every hollow it was meant to bridge, which is exactly the failure
+ * it exists to prevent.
+ */
+const GRADE_HOLD_GAIN = 3;
+
+/** Travel still unused at each end before hold reports itself saturated, metres. */
+const SATURATION_EPSILON = 1e-3;
+
 export class BladeImplement implements Implement {
   readonly id: string;
   readonly spec: BladeSpec;
+
+  /** Edge detection for the hold toggle. Per-vehicle: implements are not shared. */
+  private holdWasDown = false;
+  /** Elevation held when no contract defines one. See the note in `update`. */
+  private holdY = 0;
 
   constructor(spec: BladeSpec) {
     this.id = spec.id;
@@ -42,6 +59,8 @@ export class BladeImplement implements Implement {
       carriedVolume: 0,
       cutRate: 0,
       blocked: false,
+      gradeHold: false,
+      gradeHoldSaturated: false,
     };
   }
 
@@ -49,10 +68,17 @@ export class BladeImplement implements Implement {
     const state = ctx.vehicle.implementStates[this.id];
     if (!state || state.kind !== 'blade') return;
 
+    const pos = ctx.vehicle.position;
+    const fx = Math.sin(ctx.vehicle.heading);
+    const fz = Math.cos(ctx.vehicle.heading);
+
     // --- articulation --------------------------------------------------------
     const drive =
       actionValue(ctx.input, this.spec.raiseAction) - actionValue(ctx.input, this.spec.lowerAction);
     if (drive !== 0) {
+      // Touching the lever drops out of auto, as on a real machine. Manual
+      // input silently fighting a servo is the worst of both.
+      state.gradeHold = false;
       state.height = clamp(
         state.height + drive * this.spec.moveSpeed * ctx.dt,
         this.spec.minHeight,
@@ -60,10 +86,9 @@ export class BladeImplement implements Implement {
       );
     }
 
+    this.updateGradeHold(ctx, state, pos.x + fx * this.spec.reach, pos.z + fz * this.spec.reach);
+
     // --- dig -----------------------------------------------------------------
-    const pos = ctx.vehicle.position;
-    const fx = Math.sin(ctx.vehicle.heading);
-    const fz = Math.cos(ctx.vehicle.heading);
 
     // The cutting edge is measured from the MACHINE's ground line, not from
     // the terrain under the blade. That is what lets the blade bite into
@@ -98,5 +123,51 @@ export class BladeImplement implements Implement {
         z1: result.region.z1 + SLUMP_MARGIN,
       });
     }
+  }
+
+  /**
+   * Automatic grade control — hold the cutting edge at a fixed ELEVATION while
+   * the machine pitches and climbs beneath it.
+   *
+   * This is the answer to the real complaint about manual blade control: the
+   * lever sets height relative to the machine's own ground line, so the number
+   * you need changes continuously as you drive over ground you already cut.
+   * The player ends up doing arithmetic instead of dozing.
+   *
+   * Not an assist bolted on to make the game easy — it is what 3D machine
+   * control does on any modern dozer, and it is what makes a flat pad a
+   * question of where you drive rather than how steady your thumb is.
+   */
+  private updateGradeHold(
+    ctx: ImplementContext,
+    state: BladeState,
+    edgeX: number,
+    edgeZ: number,
+  ): void {
+    const action = this.spec.gradeHoldAction;
+    const down = action ? actionValue(ctx.input, action) > 0 : false;
+    if (down && !this.holdWasDown) {
+      state.gradeHold = !state.gradeHold;
+      // Off a job site there is no design surface, so latch wherever the edge
+      // is right now. An absolute lock is what makes free-roam levelling work
+      // at all, and it is the same servo either way.
+      if (state.gradeHold) this.holdY = ctx.vehicle.position.y + state.height;
+    }
+    this.holdWasDown = down;
+
+    if (!state.gradeHold) {
+      state.gradeHoldSaturated = false;
+      return;
+    }
+
+    const target = ctx.gradeAt(edgeX, edgeZ) ?? this.holdY;
+    const wanted = target - ctx.vehicle.position.y;
+    const reachable = clamp(wanted, this.spec.minHeight, this.spec.maxHeight);
+    state.gradeHoldSaturated = Math.abs(reachable - wanted) > SATURATION_EPSILON;
+    state.height = moveToward(
+      state.height,
+      reachable,
+      this.spec.moveSpeed * GRADE_HOLD_GAIN * ctx.dt,
+    );
   }
 }

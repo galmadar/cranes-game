@@ -33,6 +33,13 @@ export function clamp(v: number, min: number, max: number): number {
   return v < min ? min : v > max ? max : v;
 }
 
+/** Step `current` toward `target` by at most `maxDelta`, landing exactly on it. */
+export function moveToward(current: number, target: number, maxDelta: number): number {
+  const diff = target - current;
+  if (Math.abs(diff) <= maxDelta) return target;
+  return current + Math.sign(diff) * maxDelta;
+}
+
 /** Hermite fade, 0 at t<=0 and 1 at t>=1, with zero derivative at both ends. */
 export function smoothstep(t: number): number {
   if (t <= 0) return 0;

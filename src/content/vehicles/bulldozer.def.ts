@@ -16,6 +16,7 @@ export const BLADE_ID = 'blade';
 const BladeAction = {
   Raise: 'bladeRaise',
   Lower: 'bladeLower',
+  GradeHold: 'bladeGradeHold',
 } as const;
 
 export const bulldozerDef: VehicleDefinition = {
@@ -44,6 +45,7 @@ export const bulldozerDef: VehicleDefinition = {
       id: BLADE_ID,
       raiseAction: BladeAction.Raise,
       lowerAction: BladeAction.Lower,
+      gradeHoldAction: BladeAction.GradeHold,
 
       width: 4.0,
       height: 1.3,
@@ -67,6 +69,7 @@ export const bulldozerDef: VehicleDefinition = {
     [Action.SteerRight]: ['KeyD', 'ArrowRight'],
     [BladeAction.Raise]: ['KeyR'],
     [BladeAction.Lower]: ['KeyF'],
+    [BladeAction.GradeHold]: ['KeyH'],
   },
 };
 
@@ -78,4 +81,5 @@ export const BULLDOZER_CONTROL_HINTS: readonly { action: string; label: string }
   { action: Action.SteerRight, label: 'Turn right' },
   { action: BladeAction.Raise, label: 'Blade up' },
   { action: BladeAction.Lower, label: 'Blade down' },
+  { action: BladeAction.GradeHold, label: 'Hold grade (auto)' },
 ];

@@ -44,6 +44,13 @@ export interface BladeSpec {
   /** Actions this implement listens for — declared, not hard-coded. */
   raiseAction: ActionId;
   lowerAction: ActionId;
+  /**
+   * Toggles automatic grade control, if the machine has it.
+   *
+   * Optional because it is a machine FEATURE, not a fact about blades: an old
+   * dozer has no such thing, and later that becomes a purchasable upgrade.
+   */
+  gradeHoldAction?: ActionId;
 
   /** Cutting-edge width, metres. */
   width: number;
@@ -81,6 +88,17 @@ export interface BladeState {
   cutRate: number;
   /** True while the blade is up against non-diggable material (FR-3.2). */
   blocked: boolean;
+
+  /** True while the blade is servoing to an elevation instead of the lever. */
+  gradeHold: boolean;
+  /**
+   * True when hold is on but the blade has run out of travel.
+   *
+   * Worth surfacing: standing on a mound, design grade can be further below
+   * the tracks than the rams reach, and a player who cannot see that concludes
+   * grade control is broken rather than that the cut needs another layer.
+   */
+  gradeHoldSaturated: boolean;
 }
 
 export type ImplementState = BladeState;

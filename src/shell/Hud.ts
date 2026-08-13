@@ -30,6 +30,8 @@ export interface HudStats {
   gradeAtBlade: number | null;
   carriedVolume: number | null;
   bladeBlocked: boolean;
+  gradeHold: boolean;
+  gradeHoldSaturated: boolean;
   load: number;
 }
 
@@ -132,8 +134,9 @@ export class Hud {
       el(
         'div',
         undefined,
-        '<span class="tag">Drop the blade below grade to dig. ' +
-          'Volume is conserved — watch it hold steady.</span>',
+        '<span class="tag">Drop the blade below grade to dig, or press ' +
+          '<kbd>H</kbd> and let it hold grade while you drive. ' +
+          'Any manual blade input cancels the hold.</span>',
       ),
     );
 
@@ -145,11 +148,18 @@ export class Hud {
     this.set('speed', `${stats.speedKph.toFixed(1)} km/h`);
     this.set('ground', stats.groundMaterial);
     this.set('traction', `×${stats.traction.toFixed(2)}`);
+    // The hold flag matters more than the number it produces: a player who
+    // cannot tell auto from manual cannot tell a working servo from a stuck one.
+    const hold = stats.gradeHold
+      ? stats.gradeHoldSaturated
+        ? '  ▸ HOLD (out of travel)'
+        : '  ▸ HOLD'
+      : '';
     this.set(
       'blade',
       stats.bladeHeight === null
         ? '—'
-        : `${stats.bladeHeight.toFixed(2)} m${stats.bladeBlocked ? '  ⛔' : ''}`,
+        : `${stats.bladeHeight.toFixed(2)} m${stats.bladeBlocked ? '  ⛔' : ''}${hold}`,
     );
     // Names the action rather than the number: the player should not have to
     // work out that "+0.4" means "you are standing on soil that must come off".

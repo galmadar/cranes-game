@@ -7,10 +7,15 @@
 
 import { Action, actionAxis, type ActionState } from '../input/actions';
 import { materialOf } from '../materials';
-import { clamp, vec3 } from '../math/Vec';
+import { clamp, moveToward, vec3 } from '../math/Vec';
 import type { Rect, Terrain } from '../Terrain';
 import { BladeImplement } from './implements/BladeImplement';
-import type { Implement, ImplementContext } from './implements/Implement';
+import {
+  NO_GRADE,
+  type GradeQuery,
+  type Implement,
+  type ImplementContext,
+} from './implements/Implement';
 import type { ImplementSpec, VehicleDefinition, VehicleState } from './types';
 
 /** Keeps the machine clear of the perimeter berm rather than climbing it. */
@@ -20,12 +25,6 @@ const EDGE_MARGIN = 16;
 const TRACK_MARK_MIN_SPEED = 0.05;
 /** How churned tracks leave the ground behind them, 0..255. */
 const TRACK_MARK_STRENGTH = 190;
-
-function moveToward(current: number, target: number, maxDelta: number): number {
-  const diff = target - current;
-  if (Math.abs(diff) <= maxDelta) return target;
-  return current + Math.sign(diff) * maxDelta;
-}
 
 function buildImplement(spec: ImplementSpec): Implement {
   switch (spec.kind) {
@@ -78,7 +77,7 @@ export class Vehicle {
   private resistance = 0;
   private pendingSlump: Rect | null = null;
 
-  update(dt: number, input: ActionState, terrain: Terrain): void {
+  update(dt: number, input: ActionState, terrain: Terrain, gradeAt: GradeQuery = NO_GRADE): void {
     this.updateLocomotion(dt, input, terrain);
 
     // A plain object rather than closed-over locals: implements write to it
@@ -91,6 +90,7 @@ export class Vehicle {
       vehicle: this.state,
       terrain,
       def: this.def,
+      gradeAt,
       addResistance(value) {
         if (value > collected.resistance) collected.resistance = value;
       },

@@ -19,6 +19,7 @@
  */
 
 import { materialOf, MaterialId } from '../materials';
+import { clamp } from '../math/Vec';
 import type { Rect, Terrain } from '../Terrain';
 import { TUNING } from '../tuning';
 
@@ -474,10 +475,13 @@ export function applyBladeCut(params: BladeCutParams): BladeCutResult {
       }
     }
 
-    // Once the prow is over capacity the blade cannot hold any more and soil
-    // rolls off the ends — the windrows a real dozer leaves down each side.
-    const overloaded = prowBefore > params.capacity;
-    const toSides = overloaded ? volumeCut * TUNING.sideSpillFraction : 0;
+    // Soil rolls off the ends of an overfull blade — the windrows a real dozer
+    // leaves down each side. It sheds PROGRESSIVELY: a threshold made the blade
+    // hold everything up to capacity and then dump 45% of every cut sideways
+    // the instant it was crossed, which reads as the load randomly falling out
+    // rather than as a blade you can feel filling up.
+    const over = params.capacity > 0 ? (prowBefore - params.capacity) / params.capacity : 0;
+    const toSides = volumeCut * clamp(over, 0, 1) * TUNING.sideSpillFraction;
 
     deposited += fillLowestFirst(terrain, depositZone.cells, volumeCut - toSides, dominant);
 

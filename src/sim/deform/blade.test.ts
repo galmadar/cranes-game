@@ -208,6 +208,62 @@ describe('carry and deposit (FR-3.3, FR-3.4)', () => {
     }
     expect(sawSideSpill).toBe(true);
   });
+
+  /**
+   * Regression: spill used to be a THRESHOLD — nothing at all below capacity,
+   * then 45% of every cut dumped sideways the instant it was crossed. Volume
+   * was conserved perfectly and it felt like the load randomly falling out of
+   * the blade, because there was no build-up to feel. A real blade sheds more
+   * as it fills, so the fraction now ramps with how far over capacity it is.
+   */
+  describe('side spill ramps with load', () => {
+    const GROUND = 3;
+
+    /** Soil left standing outside the blade's swept width, m³. */
+    function sideCast(t: Terrain): number {
+      let total = 0;
+      for (let cz = 0; cz < t.depth; cz++) {
+        for (let cx = 0; cx < t.width; cx++) {
+          if (Math.abs(t.cellToWorldX(cx)) < 2.1) continue;
+          total += Math.max(0, t.height[t.index(cx, cz)] - GROUND);
+        }
+      }
+      return total * t.cellArea;
+    }
+
+    /** A long shallow push, sampling cumulative cut and side-cast as it goes. */
+    function push(pushes: number) {
+      const t = make(MaterialId.SAND, GROUND);
+      const marks: { at: number; cut: number; side: number }[] = [];
+      let cutTotal = 0;
+      for (let i = 0; i < pushes; i++) {
+        cutTotal += cut(t, { centerZ: -3 + i * 0.05, edgeY: GROUND - 0.3 }).volumeCut;
+        if (i % 25 === 24) marks.push({ at: i + 1, cut: cutTotal, side: sideCast(t) });
+      }
+      return marks;
+    }
+
+    it('casts nothing aside while the blade is still filling', () => {
+      // Measured: 50 shallow pushes leave the prow under the 2.4m³ capacity.
+      const marks = push(50);
+      expect(marks[marks.length - 1].side).toBeCloseTo(0, 9);
+    });
+
+    it('sheds gently just past capacity and harder well beyond it', () => {
+      const marks = push(150);
+      const spillFraction = (a: number, b: number) =>
+        (marks[b].side - marks[a].side) / (marks[b].cut - marks[a].cut);
+
+      const justOver = spillFraction(1, 2); // pushes 50 -> 75
+      const wellOver = spillFraction(3, 5); // pushes 100 -> 150
+
+      expect(justOver).toBeGreaterThan(0);
+      // The old threshold model would have jumped straight to the maximum, so
+      // these two numbers would have been equal.
+      expect(wellOver).toBeGreaterThan(justOver * 2);
+      expect(justOver).toBeLessThan(TUNING.sideSpillFraction * 0.25);
+    });
+  });
 });
 
 describe('resistance', () => {

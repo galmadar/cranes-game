@@ -63,6 +63,22 @@ export function targetAt(site: JobSite, cx: number, cz: number): number | null {
   return site.target[(cz - b.z0) * siteWidth(site) + (cx - b.x0)];
 }
 
+/**
+ * Target height at a world point, or null outside the job.
+ *
+ * Nearest-cell rather than bilinear on purpose: this feeds a blade servo, and
+ * interpolating across the site boundary would have the blade chase a value
+ * half-derived from ground the contract says nothing about.
+ */
+export function targetAtWorld(
+  terrain: Terrain,
+  site: JobSite,
+  x: number,
+  z: number,
+): number | null {
+  return targetAt(site, Math.round(terrain.worldToCellX(x)), Math.round(terrain.worldToCellZ(z)));
+}
+
 export interface FlatPadOptions {
   id: string;
   title: string;

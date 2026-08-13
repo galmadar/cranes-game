@@ -112,6 +112,8 @@ const loop = new GameLoop({
       gradeAtBlade: gradeUnderBlade(),
       carriedVolume: blade ? blade.carriedVolume : null,
       bladeBlocked: blade ? blade.blocked : false,
+      gradeHold: blade ? blade.gradeHold : false,
+      gradeHoldSaturated: blade ? blade.gradeHoldSaturated : false,
       load: vehicle.implementLoad,
     });
 
