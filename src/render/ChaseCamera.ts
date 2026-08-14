@@ -44,7 +44,7 @@ interface View {
 const VIEWS: Record<CameraMode, View> = {
   chase: { label: 'Chase · follows', frame: 'heading', distance: 16, pitch: 0.44, leash: 0, focusAhead: 0 },
   fixed: { label: 'Fixed · locked', frame: 'world', distance: 34, pitch: 0.3, leash: 12, focusAhead: 0 },
-  cab: { label: 'Cab · over the blade', frame: 'heading', distance: 8, pitch: 0.3, leash: 0, focusAhead: 3.2 },
+  cab: { label: 'Cab · over the blade', frame: 'heading', distance: 11, pitch: 0.66, leash: 0, focusAhead: 3.2 },
   top: { label: 'Top · reads grade', frame: 'heading', distance: 30, pitch: 1.15, leash: 0, focusAhead: 0 },
 };
 
@@ -89,9 +89,17 @@ export class ChaseCamera {
    */
   private readonly framing: Record<CameraMode, { distance: number; pitch: number }>;
 
-  /** What the camera points at. */
+  /**
+   * The machine. What a heading-framed view orbits, and what the leash chases.
+   *
+   * Kept apart from `lookAt` because orbiting whatever the camera AIMS at drags
+   * the camera in when a view aims ahead: the cab view stood five metres behind
+   * the machine, filling the frame with the back of the cab.
+   */
+  private readonly focus = new THREE.Vector3();
+  /** What the camera points at — the machine, or the work in front of it. */
   private readonly lookAt = new THREE.Vector3();
-  /** What a world-framed view orbits. Decoupling this from `lookAt` is the mode. */
+  /** What a world-framed view orbits. Decoupling this from `focus` is the mode. */
   private readonly anchor = new THREE.Vector3();
   private lastHeading = 0;
 
@@ -145,7 +153,7 @@ export class ChaseCamera {
 
     if (isWorld && !wasWorld) {
       this.worldYaw = wrapPi(this.lastHeading + this.yawOffset);
-      this.anchor.copy(this.lookAt);
+      this.anchor.copy(this.focus);
     } else if (!isWorld && wasWorld) {
       this.yawOffset = wrapPi(this.worldYaw - this.lastHeading);
     }
@@ -159,7 +167,7 @@ export class ChaseCamera {
     if (VIEWS[this.mode_].frame === 'world') {
       // Nothing to ease — re-plant the tripod behind the machine instead.
       this.worldYaw = this.lastHeading;
-      this.anchor.copy(this.lookAt);
+      this.anchor.copy(this.focus);
       return;
     }
     this.recentering = true;
@@ -175,21 +183,29 @@ export class ChaseCamera {
     const view = VIEWS[this.mode_];
     const framing = this.framing[this.mode_];
 
-    // Look slightly above the origin — at the cab, not the tracks — and, for
-    // views that ask for it, ahead of the machine at the work itself.
-    const focusX = position.x + Math.sin(heading) * view.focusAhead;
+    // Slightly above the origin — at the cab, not the tracks.
+    const focusX = position.x;
     const focusY = position.y + 1.7;
-    const focusZ = position.z + Math.cos(heading) * view.focusAhead;
+    const focusZ = position.z;
+    // And, for views that ask for it, aim ahead at the work rather than the machine.
+    const aimX = focusX + Math.sin(heading) * view.focusAhead;
+    const aimZ = focusZ + Math.cos(heading) * view.focusAhead;
 
     if (!this.initialised) {
-      this.lookAt.set(focusX, focusY, focusZ);
-      this.anchor.copy(this.lookAt);
+      this.focus.set(focusX, focusY, focusZ);
+      this.lookAt.set(aimX, focusY, aimZ);
+      this.anchor.copy(this.focus);
       this.initialised = true;
     } else {
+      this.focus.set(
+        damp(this.focus.x, focusX, 9, dt),
+        damp(this.focus.y, focusY, 5, dt),
+        damp(this.focus.z, focusZ, 9, dt),
+      );
       this.lookAt.set(
-        damp(this.lookAt.x, focusX, 9, dt),
+        damp(this.lookAt.x, aimX, 9, dt),
         damp(this.lookAt.y, focusY, 5, dt),
-        damp(this.lookAt.z, focusZ, 9, dt),
+        damp(this.lookAt.z, aimZ, 9, dt),
       );
     }
 
@@ -207,7 +223,7 @@ export class ChaseCamera {
         }
       }
       yaw = heading + this.yawOffset;
-      pivot = this.lookAt;
+      pivot = this.focus;
     }
 
     const horizontal = framing.distance * Math.cos(framing.pitch);
@@ -229,8 +245,8 @@ export class ChaseCamera {
     leash: number,
     groundHeightAt: (x: number, z: number) => number,
   ): THREE.Vector3 {
-    const dx = this.lookAt.x - this.anchor.x;
-    const dz = this.lookAt.z - this.anchor.z;
+    const dx = this.focus.x - this.anchor.x;
+    const dz = this.focus.z - this.anchor.z;
     const away = Math.hypot(dx, dz);
     if (away > leash) {
       const k = (away - leash) / away;
