@@ -15,7 +15,7 @@
 import { describe, expect, it } from 'vitest';
 import { bulldozerDef } from '../../content/vehicles/bulldozer.def';
 import { Action, type ActionState } from '../input/actions';
-import { MaterialId } from '../materials';
+import { MaterialId, materialOf } from '../materials';
 import { Terrain } from '../Terrain';
 import { World } from '../World';
 import { Vehicle } from './Vehicle';
@@ -46,7 +46,7 @@ interface Dig {
   seconds: number;
 }
 
-function dig(input: ActionState, seconds: number): Dig {
+function dig(input: ActionState, seconds: number, idleSeconds = 0): Dig {
   const terrain = new Terrain(256, 256, 0.5);
   terrain.material.fill(MaterialId.SAND);
   const world = new World(terrain);
@@ -69,6 +69,8 @@ function dig(input: ActionState, seconds: number): Dig {
     if (vehicle.implementLoad > heaviest) heaviest = vehicle.implementLoad;
     if (vehicle.implementLoad > 0.98) stalledSteps++;
   }
+
+  for (let i = 0; i < Math.round(idleSeconds / STEP); i++) world.step(STEP, {});
 
   return {
     terrain,
@@ -170,6 +172,40 @@ describe('a blade with a limit', () => {
     }
     expect(sides[0]).toBeGreaterThan(0.5);
     expect(sides[1]).toBeGreaterThan(0.5);
+  });
+});
+
+describe('cut faces batter back to the angle of repose', () => {
+  /** Worst amount by which neighbouring cells stand steeper than the soil allows. */
+  function worstOverhang(terrain: Terrain, behindZ: number): number {
+    let worst = 0;
+    for (let cz = 0; cz < terrain.depth; cz++) {
+      if (terrain.cellToWorldZ(cz) > behindZ) continue;
+      for (let cx = 0; cx < terrain.width; cx++) {
+        const i = terrain.index(cx, cz);
+        const material = materialOf(terrain.material[i]);
+        if (!material.diggable) continue;
+        const limit = Math.tan(material.angleOfRepose) * terrain.cellSize;
+        const right = cx < terrain.width - 1 ? i + 1 : -1;
+        const ahead = cz < terrain.depth - 1 ? i + terrain.width : -1;
+        for (const j of [right, ahead]) {
+          if (j < 0) continue;
+          const excess = Math.abs(terrain.height[i] - terrain.height[j]) - limit;
+          if (excess > worst) worst = excess;
+        }
+      }
+    }
+    return worst;
+  }
+
+  // Relaxation used to run only under a machine, so a cut face froze at
+  // whatever angle it was abandoned at: 358 pairs up to 0.93 m too steep,
+  // unchanged ten seconds later. Soil does not care whether anyone is watching.
+  it('leaves no standing wall behind the machine, however long ago it passed', () => {
+    const { terrain, vehicle } = dig(DIG, 25, 20);
+    // Well behind the blade: the face the blade itself is holding does not count.
+    const behind = vehicle.state.position.z - 10;
+    expect(worstOverhang(terrain, behind)).toBeLessThan(0.02);
   });
 });
 

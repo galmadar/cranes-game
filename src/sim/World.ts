@@ -10,13 +10,37 @@ import { relaxSlump } from './deform/slump';
 import { EMPTY_ACTION_STATE, type ActionState } from './input/actions';
 import type { JobRunner } from './job/JobRunner';
 import { targetAtWorld } from './job/JobSite';
-import type { Terrain } from './Terrain';
+import type { Rect, Terrain } from './Terrain';
 import { TUNING } from './tuning';
 import type { Vehicle } from './vehicle/Vehicle';
+
+/**
+ * Ground is settled a tile at a time, in cells.
+ *
+ * Small enough that a tile which has come to rest drops out of the work set
+ * quickly, large enough that the per-tile overhead is not the cost.
+ */
+const SETTLE_TILE = 16;
+/** Tiles worked per step. The whole budget for keeping the world honest. */
+const SETTLE_TILES_PER_STEP = 10;
+/** Tiles are relaxed one cell wide of themselves, so soil can cross a seam. */
+const SETTLE_OVERLAP = 1;
 
 export class World {
   readonly terrain: Terrain;
   readonly vehicles: Vehicle[] = [];
+
+  /**
+   * Ground that has been disturbed and has not yet reached its repose angle.
+   *
+   * Relaxation used to run only where a machine was standing, so a cut face
+   * stopped collapsing the moment you drove away from it and froze at whatever
+   * angle it happened to be left at: measured, 358 neighbouring pairs standing
+   * up to 0.93 m steeper than sand can hold, still there ten seconds later.
+   * Soil does not know whether anyone is watching. Disturbed tiles stay in
+   * this set until they report themselves at rest.
+   */
+  private readonly settling = new Set<number>();
 
   /** The active contract, if any. Null means free roam. */
   job: JobRunner | null = null;
@@ -72,8 +96,12 @@ export class World {
     // turn, so overlapping edits relax together instead of fighting.
     for (const vehicle of this.vehicles) {
       const region = vehicle.consumeSlumpRegion();
-      if (region) relaxSlump(this.terrain, region, TUNING.slumpPasses);
+      if (region) {
+        relaxSlump(this.terrain, region, TUNING.slumpPasses);
+        this.markSettling(region);
+      }
     }
+    this.stepSettling();
 
     // Score after settling, so the job is measured against ground that has
     // finished moving rather than mid-collapse.
@@ -81,6 +109,61 @@ export class World {
 
     this.elapsedSeconds += dt;
     this.stepCount++;
+  }
+
+  /** How many tiles are still moving. Zero means the ground has stopped. */
+  get settlingTiles(): number {
+    return this.settling.size;
+  }
+
+  private get tilesX(): number {
+    return Math.ceil(this.terrain.width / SETTLE_TILE);
+  }
+
+  private markSettling(rect: Rect): void {
+    const tx0 = Math.max(0, Math.floor(rect.x0 / SETTLE_TILE));
+    const tz0 = Math.max(0, Math.floor(rect.z0 / SETTLE_TILE));
+    const tx1 = Math.min(this.tilesX - 1, Math.floor(rect.x1 / SETTLE_TILE));
+    const tz1 = Math.min(
+      Math.ceil(this.terrain.depth / SETTLE_TILE) - 1,
+      Math.floor(rect.z1 / SETTLE_TILE),
+    );
+    for (let tz = tz0; tz <= tz1; tz++) {
+      for (let tx = tx0; tx <= tx1; tx++) this.settling.add(tz * this.tilesX + tx);
+    }
+  }
+
+  /**
+   * Work through the backlog of unsettled ground, oldest first.
+   *
+   * Round-robin rather than draining: a tile that is still moving goes to the
+   * BACK of the set, so one stubborn face cannot starve the rest of the site.
+   */
+  private stepSettling(): void {
+    if (this.settling.size === 0) return;
+
+    const due: number[] = [];
+    for (const key of this.settling) {
+      due.push(key);
+      if (due.length >= SETTLE_TILES_PER_STEP) break;
+    }
+
+    for (const key of due) {
+      this.settling.delete(key);
+      const tx = key % this.tilesX;
+      const tz = (key - tx) / this.tilesX;
+      const result = relaxSlump(
+        this.terrain,
+        {
+          x0: tx * SETTLE_TILE - SETTLE_OVERLAP,
+          z0: tz * SETTLE_TILE - SETTLE_OVERLAP,
+          x1: (tx + 1) * SETTLE_TILE - 1 + SETTLE_OVERLAP,
+          z1: (tz + 1) * SETTLE_TILE - 1 + SETTLE_OVERLAP,
+        },
+        TUNING.slumpPasses,
+      );
+      if (!result.settled) this.settling.add(key);
+    }
   }
 
   /** Design elevation for grade control. Free roam has none, hence null. */
