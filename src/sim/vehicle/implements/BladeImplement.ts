@@ -47,15 +47,8 @@ const PITCH_CARRY_FORWARD = 0.65;
 const PITCH_BITE_BACK = 0.6;
 const PITCH_BITE_FORWARD = 1.6;
 
-/**
- * Effective lever arm for the cutting edge, as a fraction of blade height.
- *
- * Pitching the mouldboard about its top mount swings the edge down and forward,
- * which is the real reason a forward-pitched blade digs in. Modelled as a pure
- * elevation offset: the fore-aft component is far smaller than a terrain cell
- * and would only add coupling nobody could feel.
- */
-const PITCH_EDGE_LEVER = 0.6;
+/** Cutting edge drop below the pitch pivot, as a fraction of blade height. */
+const EDGE_BELOW_PIVOT = 0.6;
 
 export class BladeImplement implements Implement {
   readonly id: string;
@@ -93,9 +86,19 @@ export class BladeImplement implements Implement {
     return span > 0 ? clamp(pitch / span, -1, 1) : 0;
   }
 
-  /** How far pitch drops the cutting edge below the lever position, metres. */
+  /**
+   * How far pitch drops the cutting edge below the lever position, metres.
+   *
+   * Rigid rotation of the real geometry, not a fudge factor: the edge sits
+   * below and ahead of the trunnion, so rolling the top forward swings it down
+   * and back. The renderer rotates the same mouldboard about the same pivot,
+   * so what the player sees the blade doing is what the terrain gets.
+   */
   private edgeDrop(pitch: number): number {
-    return Math.sin(pitch) * this.spec.height * PITCH_EDGE_LEVER;
+    const spec = this.spec.pitch;
+    if (!spec) return 0;
+    const below = -this.spec.height * EDGE_BELOW_PIVOT;
+    return below * (1 - Math.cos(pitch)) + spec.edgeAhead * Math.sin(pitch);
   }
 
   update(ctx: ImplementContext): void {

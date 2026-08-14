@@ -95,6 +95,17 @@ export interface BladePitchSpec {
   rest: number;
   /** rad/s */
   speed: number;
+
+  /**
+   * How far the cutting edge stands AHEAD of the pitch pivot, metres.
+   *
+   * Machine geometry, not a tuning knob, and the whole reason pitching forward
+   * digs: the edge hangs on a lever ahead of the trunnion, so rolling the top
+   * forward swings the edge down. Set it to zero and pitch becomes purely a
+   * carrying decision. The renderer builds the mouldboard around the same
+   * number, so the blade you see is the blade the simulation cuts with.
+   */
+  edgeAhead: number;
 }
 
 export type ImplementSpec = BladeSpec;

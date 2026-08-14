@@ -12,6 +12,8 @@ export interface VehicleParts {
   root: THREE.Group;
   /** Optional articulated nodes the view knows how to drive. */
   blade?: THREE.Group;
+  /** Mouldboard node, rotated for pitch. Nested inside `blade`. */
+  bladePitch?: THREE.Object3D;
 }
 
 export type VehicleViewFactory = (def: VehicleDefinition) => VehicleParts;
@@ -20,12 +22,14 @@ export class VehicleView {
   readonly object: THREE.Group;
 
   private readonly blade: THREE.Group | undefined;
+  private readonly bladePitch: THREE.Object3D | undefined;
   private readonly bladeRestY: number;
 
   constructor(def: VehicleDefinition, factory: VehicleViewFactory) {
     const parts = factory(def);
     this.object = parts.root;
     this.blade = parts.blade;
+    this.bladePitch = parts.bladePitch;
     this.bladeRestY = parts.blade ? parts.blade.position.y : 0;
   }
 
@@ -39,9 +43,9 @@ export class VehicleView {
       const bladeState = Object.values(state.implementStates).find((s) => s.kind === 'blade');
       if (bladeState) {
         this.blade.position.y = this.bladeRestY + bladeState.height;
-        // Positive pitch tips the top of the mouldboard forward (-X rotation),
-        // which is what the sim reads as the edge dropping in to bite.
-        this.blade.rotation.x = -bladeState.pitch;
+        // Positive pitch tips the top of the mouldboard forward, which swings
+        // the cutting edge down — exactly what `edgeDrop` computes in the sim.
+        if (this.bladePitch) this.bladePitch.rotation.x = bladeState.pitch;
       }
     }
   }

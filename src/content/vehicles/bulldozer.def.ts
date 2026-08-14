@@ -72,6 +72,9 @@ export const bulldozerDef: VehicleDefinition = {
         max: 0.2,
         rest: 0,
         speed: 0.35,
+        // The edge hangs this far ahead of the trunnion, which is what turns
+        // a pitch change into a change in cutting depth.
+        edgeAhead: 0.42,
       },
     },
   ],
