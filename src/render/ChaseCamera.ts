@@ -1,5 +1,5 @@
 /**
- * ChaseCamera — follows the active machine (FR-6.1).
+ * ChaseCamera — follows the active machine (FR-6.1), in one of two modes.
  *
  * Replaces OrbitControls: orbiting a fixed origin is wrong once something is
  * driving around.
@@ -10,13 +10,17 @@
  * a side view is to watch the blade move soil from that side. A camera that
  * creeps back to centre fights the player every time they line up a shot.
  *
- * The offset is held relative to the machine's HEADING, not to the world, so
- * a side view stays a side view when the dozer turns. `recenter()` (C) eases
- * back behind, and is the only thing that ever moves the angle on its own.
+ * `chase` holds the offset relative to the machine's HEADING, so a side view
+ * stays a side view when the dozer turns. `fixed` holds it relative to the
+ * WORLD: the camera stands still and pans to track, like a broadcast camera on
+ * a tripod, drifting only once the machine pulls past its leash. Same gesture,
+ * different frame of reference.
  */
 
 import * as THREE from 'three';
 import type { Vec3 } from '../sim/math/Vec';
+
+export type CameraMode = 'chase' | 'fixed';
 
 /** Frame-rate independent exponential smoothing. */
 function damp(current: number, target: number, lambda: number, dt: number): number {
@@ -30,21 +34,42 @@ const MAX_DISTANCE = 90;
 /** How briskly `recenter()` swings back behind the machine. */
 const RECENTER_RATE = 7;
 
+/**
+ * How far the machine may stray from a fixed camera's subject point, metres.
+ *
+ * Without a leash a locked camera is only usable in the yard it was planted
+ * in; with one it behaves like a broadcast camera sliding down the touchline —
+ * still, until the play leaves the frame.
+ */
+const LEASH = 12;
+/** How lazily the tripod slides once the leash is taut. Slow enough to read as drift. */
+const LEASH_RATE = 2.2;
+
 /** Wrap to (-pi, pi] so recentring always takes the short way round. */
 function wrapPi(a: number): number {
   const twoPi = Math.PI * 2;
-  let r = ((a + Math.PI) % twoPi + twoPi) % twoPi;
+  const r = (((a + Math.PI) % twoPi) + twoPi) % twoPi;
   return r - Math.PI;
 }
 
 export class ChaseCamera {
   readonly camera: THREE.PerspectiveCamera;
 
+  private mode_: CameraMode = 'chase';
+
+  /** Chase: yaw relative to the machine's heading. */
   private yawOffset = 0;
+  /** Fixed: yaw relative to the world, which is what makes the camera stand still. */
+  private worldYaw = 0;
   private pitch = 0.44;
   private distance = 16;
 
+  /** What the camera points at — always the machine. */
   private readonly lookAt = new THREE.Vector3();
+  /** What a fixed camera orbits. Decoupling this from `lookAt` is the whole mode. */
+  private readonly anchor = new THREE.Vector3();
+  private lastHeading = 0;
+
   private readonly domElement: HTMLElement;
 
   private dragging = false;
@@ -65,8 +90,43 @@ export class ChaseCamera {
     domElement.addEventListener('contextmenu', this.onContextMenu);
   }
 
+  get mode(): CameraMode {
+    return this.mode_;
+  }
+
+  get modeLabel(): string {
+    return this.mode_ === 'chase' ? 'Chase · follows' : 'Fixed · locked';
+  }
+
+  cycleMode(): CameraMode {
+    this.setMode(this.mode_ === 'chase' ? 'fixed' : 'chase');
+    return this.mode_;
+  }
+
+  /**
+   * Switching never moves the picture. Converting the yaw between frames of
+   * reference costs one line and saves the player re-finding their shot.
+   */
+  setMode(mode: CameraMode): void {
+    if (mode === this.mode_) return;
+    if (mode === 'fixed') {
+      this.worldYaw = wrapPi(this.lastHeading + this.yawOffset);
+      this.anchor.copy(this.lookAt);
+    } else {
+      this.yawOffset = wrapPi(this.worldYaw - this.lastHeading);
+    }
+    this.recentering = false;
+    this.mode_ = mode;
+  }
+
   /** Ease back behind the machine. The only thing that moves the angle on its own. */
   recenter(): void {
+    if (this.mode_ === 'fixed') {
+      // Nothing to ease — re-plant the tripod behind the machine instead.
+      this.worldYaw = this.lastHeading;
+      this.anchor.copy(this.lookAt);
+      return;
+    }
     this.recentering = true;
   }
 
@@ -76,13 +136,7 @@ export class ChaseCamera {
     heading: number,
     groundHeightAt: (x: number, z: number) => number,
   ): void {
-    if (this.recentering) {
-      this.yawOffset = damp(this.yawOffset, 0, RECENTER_RATE, dt);
-      if (Math.abs(this.yawOffset) < 0.002) {
-        this.yawOffset = 0;
-        this.recentering = false;
-      }
-    }
+    this.lastHeading = heading;
 
     // Look slightly above the origin — at the cab, not the tracks.
     const focusX = position.x;
@@ -91,6 +145,7 @@ export class ChaseCamera {
 
     if (!this.initialised) {
       this.lookAt.set(focusX, focusY, focusZ);
+      this.anchor.copy(this.lookAt);
       this.initialised = true;
     } else {
       this.lookAt.set(
@@ -100,12 +155,27 @@ export class ChaseCamera {
       );
     }
 
-    const yaw = heading + this.yawOffset;
-    const horizontal = this.distance * Math.cos(this.pitch);
+    let yaw: number;
+    let pivot: THREE.Vector3;
+    if (this.mode_ === 'fixed') {
+      yaw = this.worldYaw;
+      pivot = this.updateAnchor(dt, groundHeightAt);
+    } else {
+      if (this.recentering) {
+        this.yawOffset = damp(this.yawOffset, 0, RECENTER_RATE, dt);
+        if (Math.abs(this.yawOffset) < 0.002) {
+          this.yawOffset = 0;
+          this.recentering = false;
+        }
+      }
+      yaw = heading + this.yawOffset;
+      pivot = this.lookAt;
+    }
 
-    let camX = this.lookAt.x - Math.sin(yaw) * horizontal;
-    let camZ = this.lookAt.z - Math.cos(yaw) * horizontal;
-    let camY = this.lookAt.y + this.distance * Math.sin(this.pitch);
+    const horizontal = this.distance * Math.cos(this.pitch);
+    const camX = pivot.x - Math.sin(yaw) * horizontal;
+    const camZ = pivot.z - Math.cos(yaw) * horizontal;
+    let camY = pivot.y + this.distance * Math.sin(this.pitch);
 
     // Never let a hill swallow the camera.
     const floor = groundHeightAt(camX, camZ) + 1.2;
@@ -113,6 +183,29 @@ export class ChaseCamera {
 
     this.camera.position.set(camX, camY, camZ);
     this.camera.lookAt(this.lookAt);
+  }
+
+  /** Drag the tripod's subject point along, but only once the leash is taut. */
+  private updateAnchor(
+    dt: number,
+    groundHeightAt: (x: number, z: number) => number,
+  ): THREE.Vector3 {
+    const dx = this.lookAt.x - this.anchor.x;
+    const dz = this.lookAt.z - this.anchor.z;
+    const away = Math.hypot(dx, dz);
+    if (away > LEASH) {
+      const k = (away - LEASH) / away;
+      this.anchor.x = damp(this.anchor.x, this.anchor.x + dx * k, LEASH_RATE, dt);
+      this.anchor.z = damp(this.anchor.z, this.anchor.z + dz * k, LEASH_RATE, dt);
+      // Follow the ground it slid over, or the camera sinks into a rise.
+      this.anchor.y = damp(
+        this.anchor.y,
+        groundHeightAt(this.anchor.x, this.anchor.z) + 1.7,
+        LEASH_RATE,
+        dt,
+      );
+    }
+    return this.anchor;
   }
 
   setAspect(aspect: number): void {
@@ -145,7 +238,8 @@ export class ChaseCamera {
     this.lastX = event.clientX;
     this.lastY = event.clientY;
 
-    this.yawOffset = wrapPi(this.yawOffset - dx * 0.006);
+    if (this.mode_ === 'fixed') this.worldYaw = wrapPi(this.worldYaw - dx * 0.006);
+    else this.yawOffset = wrapPi(this.yawOffset - dx * 0.006);
     this.pitch = Math.min(MAX_PITCH, Math.max(MIN_PITCH, this.pitch + dy * 0.005));
   };
 

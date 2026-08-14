@@ -69,6 +69,7 @@ window.addEventListener('keydown', (e) => {
   }
   if (typing) return;
   if (e.code === 'KeyC') renderer.chase.recenter();
+  if (e.code === 'KeyV') renderer.chase.cycleMode();
   if (e.code === 'KeyG') renderer.toggleJobOverlay(world);
   if (e.code === 'KeyP') renderer.togglePostFx();
 });
@@ -117,6 +118,7 @@ const loop = new GameLoop({
       gradeHold: blade ? blade.gradeHold : false,
       gradeHoldSaturated: blade ? blade.gradeHoldSaturated : false,
       load: vehicle.implementLoad,
+      cameraMode: renderer.chase.modeLabel,
     });
 
     jobHud.update(world.job);

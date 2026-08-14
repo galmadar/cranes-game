@@ -37,6 +37,8 @@ export interface HudStats {
   gradeHold: boolean;
   gradeHoldSaturated: boolean;
   load: number;
+  /** Human-readable camera mode, supplied by the camera itself. */
+  cameraMode: string;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -59,6 +61,7 @@ const ROWS = [
   ['pitch', 'Pitch'],
   ['carried', 'Pushing'],
   ['load', 'Load'],
+  ['camera', 'Camera'],
   ['fps', 'FPS'],
   ['frame', 'Frame'],
   ['time', 'Sim time'],
@@ -123,7 +126,8 @@ export class Hud {
         'legend-row',
         '<kbd>drag</kbd> <span class="tag">set angle (it stays)</span> ' +
           '<kbd>wheel</kbd> <span class="tag">zoom</span> ' +
-          '<kbd>C</kbd> <span class="tag">recenter</span>',
+          '<kbd>C</kbd> <span class="tag">recenter</span> ' +
+          '<kbd>V</kbd> <span class="tag">chase / fixed camera</span>',
       ),
     );
     help.appendChild(
@@ -198,6 +202,7 @@ export class Hud {
         : `${stats.carriedVolume.toFixed(2)} / ${(stats.bladeCapacity ?? 0).toFixed(1)} m³`,
     );
     this.set('load', `${Math.round(stats.load * 100)}%`);
+    this.set('camera', stats.cameraMode);
     this.set('fps', stats.fps.toFixed(0));
     this.set('frame', `${stats.frameMs.toFixed(1)} ms`);
     this.set('time', `${stats.simTime.toFixed(1)} s`);

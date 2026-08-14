@@ -20,6 +20,9 @@ import type { SettingDef, SettingGroup } from './settingsSchema';
  */
 const STORAGE_KEY = 'cranes-tuning-v2';
 
+/** Separate key: this is a view preference, not a tuning override. */
+const MODE_KEY = 'cranes-settings-advanced';
+
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   className?: string,
@@ -35,7 +38,11 @@ export class SettingsPanel {
   private readonly root: HTMLElement;
   private readonly groups: SettingGroup[];
   private readonly rows = new Map<string, { range: HTMLInputElement; number: HTMLInputElement }>();
+  /** Headings and their rows, so a group whose contents all hide can hide too. */
+  private readonly sections: { heading: HTMLElement; rows: { el: HTMLElement; advanced: boolean }[] }[] = [];
+  private readonly modeInput: HTMLInputElement;
   private open = false;
+  private advanced = false;
 
   /** Notified when the drawer opens or closes, so the HUD can get out of the way. */
   onVisibilityChange: ((open: boolean) => void) | null = null;
@@ -51,6 +58,16 @@ export class SettingsPanel {
 
     const header = el('header', 'settings-header');
     header.appendChild(el('h1', undefined, 'Settings'));
+
+    const modeLabel = el('label', 'settings-mode');
+    const modeInput = el('input') as HTMLInputElement;
+    modeInput.type = 'checkbox';
+    modeInput.title = 'Show every knob, including the ones that need a feel for the sim';
+    modeInput.addEventListener('change', () => this.setAdvanced(modeInput.checked));
+    modeLabel.append(modeInput, document.createTextNode('Advanced'));
+    header.appendChild(modeLabel);
+    this.modeInput = modeInput;
+
     const close = el('button', 'settings-close', '&times;');
     close.type = 'button';
     close.title = 'Close (Esc)';
@@ -60,8 +77,14 @@ export class SettingsPanel {
 
     const body = el('div', 'settings-body');
     for (const group of groups) {
-      body.appendChild(el('h2', undefined, group.title));
-      for (const setting of group.settings) body.appendChild(this.buildRow(setting));
+      const heading = el('h2', undefined, group.title);
+      body.appendChild(heading);
+      const rows = group.settings.map((setting) => {
+        const node = this.buildRow(setting);
+        body.appendChild(node);
+        return { el: node, advanced: setting.advanced === true };
+      });
+      this.sections.push({ heading, rows });
     }
     this.root.appendChild(body);
 
@@ -77,6 +100,35 @@ export class SettingsPanel {
 
     parent.appendChild(this.root);
     this.load();
+    this.setAdvanced(loadMode());
+  }
+
+  /**
+   * Basic hides the knobs whose effect you cannot predict without knowing how
+   * the sim works. Hidden is not disabled: an advanced value stays in force,
+   * saved and reset like any other, so switching views never changes the game.
+   */
+  setAdvanced(on: boolean): void {
+    this.advanced = on;
+    this.modeInput.checked = on;
+    for (const section of this.sections) {
+      let visible = 0;
+      for (const row of section.rows) {
+        const shown = on || !row.advanced;
+        row.el.style.display = shown ? '' : 'none';
+        if (shown) visible++;
+      }
+      section.heading.style.display = visible > 0 ? '' : 'none';
+    }
+    try {
+      localStorage.setItem(MODE_KEY, on ? '1' : '0');
+    } catch {
+      /* storage unavailable — the view still switched */
+    }
+  }
+
+  get isAdvanced(): boolean {
+    return this.advanced;
   }
 
   private buildRow(setting: SettingDef): HTMLElement {
@@ -205,6 +257,14 @@ export class SettingsPanel {
       s.set(Math.min(s.max, Math.max(s.min, value)));
     });
     this.syncInputs();
+  }
+}
+
+function loadMode(): boolean {
+  try {
+    return localStorage.getItem(MODE_KEY) === '1';
+  } catch {
+    return false;
   }
 }
 
