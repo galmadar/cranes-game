@@ -21,6 +21,27 @@ import type { ImplementSpec, VehicleDefinition, VehicleState } from './types';
 /** Keeps the machine clear of the perimeter berm rather than climbing it. */
 const EDGE_MARGIN = 16;
 
+/** How far in from the machine's side the track centreline runs, metres. */
+const TRACK_INSET = 0.45;
+
+/**
+ * Track contact patch as a fraction of the machine's overall length.
+ *
+ * The declared length includes the blade and pushframe hanging off the front —
+ * ground the machine does not stand on. Standing on it put the leading sample
+ * five centimetres ahead of the cut, where, being a maximum, it levered the
+ * whole nose up and the machine spent its life climbing out of its own trench.
+ */
+const TRACK_LENGTH_FRACTION = 0.65;
+/**
+ * Samples per track, nose to tail.
+ *
+ * Spaced closer than a terrain cell on purpose. At five samples the support
+ * maximum jumped from cell to cell as the machine crept forward and the
+ * chassis rocked through 18 degrees on ground that was almost flat.
+ */
+const TRACK_SAMPLES = 13;
+
 /** Below this ground speed the tracks are not laying a mark. */
 const TRACK_MARK_MIN_SPEED = 0.05;
 /** How churned tracks leave the ground behind them, 0..255. */
@@ -136,7 +157,11 @@ export class Vehicle {
 
     // A loaded blade drags the machine down; one buried in rock nearly stops
     // it. This is what makes the dig feel like work rather than like painting.
-    const load = 1 - clamp(this.resistance, 0, 0.98);
+    //
+    // Forward only: reversing pulls the blade out of the load instead of into
+    // it, and that is what keeps an overloaded machine recoverable rather than
+    // parked forever in the hole it dug.
+    const load = throttle >= 0 ? 1 - clamp(this.resistance, 0, 0.98) : 1;
 
     const targetSpeed =
       (throttle >= 0 ? loco.maxSpeed * throttle : loco.maxReverseSpeed * throttle) *
@@ -166,24 +191,60 @@ export class Vehicle {
       s.position.z = clamp(s.position.z, -limitZ, limitZ);
     }
 
-    // FR-2.3 — conform to the ground.
-    s.position.y = terrain.sampleHeight(s.position.x, s.position.z);
-    const n = terrain.sampleNormal(s.position.x, s.position.z);
-
-    // Height-field gradient from the normal, then resolve it along the
-    // machine's own forward and right axes.
-    const dhdx = -n.x / n.y;
-    const dhdz = -n.z / n.y;
     const fx = Math.sin(s.heading);
     const fz = Math.cos(s.heading);
     // right = forward x up
     const rx = -fz;
     const rz = fx;
 
-    s.pitch = -Math.atan(dhdx * fx + dhdz * fz); // nose up when climbing
-    s.roll = -Math.atan(dhdx * rx + dhdz * rz);
-
+    this.conformToGround(terrain, fx, fz, rx, rz);
     this.layTrackMarks(terrain, fx, fz, rx, rz);
+  }
+
+  /**
+   * FR-2.3 — rest the machine on its TRACKS, not on one point beneath its centre.
+   *
+   * A point sample let a 5.2 m machine drop into the half-metre slot its own
+   * blade had just cut, then cut again from the new floor: a staircase that
+   * reached 1.31 m on a blade with 0.55 m of travel, with the chassis snapping
+   * through 27 degrees of pitch on ground it had barely scratched. Tracks
+   * bridge a slot; a point falls into it.
+   */
+  private conformToGround(
+    terrain: Terrain,
+    fx: number,
+    fz: number,
+    rx: number,
+    rz: number,
+  ): void {
+    const s = this.state;
+    const halfLength = (this.def.dimensions.length * TRACK_LENGTH_FRACTION) / 2;
+    const halfTrack = this.def.dimensions.width / 2 - TRACK_INSET;
+
+    let front = -Infinity;
+    let rear = -Infinity;
+    let left = -Infinity;
+    let right = -Infinity;
+
+    for (let i = 0; i < TRACK_SAMPLES; i++) {
+      const along = ((i / (TRACK_SAMPLES - 1)) * 2 - 1) * halfLength;
+      for (const side of [-1, 1]) {
+        const h = terrain.sampleHeight(
+          s.position.x + fx * along + rx * side * halfTrack,
+          s.position.z + fz * along + rz * side * halfTrack,
+        );
+        // A rigid track rests on the high points and bridges the rest, so the
+        // support under each end is the maximum there — never the average.
+        if (along >= 0 && h > front) front = h;
+        if (along <= 0 && h > rear) rear = h;
+        if (side < 0 && h > left) left = h;
+        if (side > 0 && h > right) right = h;
+      }
+    }
+
+    s.position.y = (front + rear) / 2;
+    s.pitch = -Math.atan2(front - rear, halfLength); // nose up when climbing
+    s.roll = -Math.atan2(right - left, halfTrack * 2);
   }
 
   /**

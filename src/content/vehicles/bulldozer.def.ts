@@ -62,14 +62,16 @@ export const bulldozerDef: VehicleDefinition = {
 
       capacity: 3.4,
 
-      // About ±11°, which is roughly the adjustment range of a real dozer's
-      // pitch rams. Wide enough to feel, narrow enough that neutral stays the
-      // sane default rather than a trap.
+      // About ±26°. A real dozer's pitch rams give half this and are set with
+      // a wrench in the yard; ours is a live control on a key, so it has to
+      // read as one. At ±11° the mechanical effect was a 2.3x swing in what
+      // the blade would hold and the visible effect was nothing at all — you
+      // learned the axis from a HUD string instead of from the machine.
       pitch: {
         backAction: BladeAction.PitchBack,
         forwardAction: BladeAction.PitchForward,
-        min: -0.2,
-        max: 0.2,
+        min: -0.45,
+        max: 0.45,
         rest: 0,
         speed: 0.35,
         // The edge hangs this far ahead of the trunnion, which is what turns

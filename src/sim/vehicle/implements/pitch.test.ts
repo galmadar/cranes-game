@@ -48,6 +48,23 @@ function drive(v: Vehicle, t: Terrain, input: ActionState, seconds: number): voi
   for (let i = 0; i < Math.round(seconds / STEP); i++) v.update(STEP, input, t);
 }
 
+/**
+ * Drive a fixed DISTANCE rather than a fixed time, and report it.
+ *
+ * Pitch changes how hard the machine is working, so a fixed-time pass confounds
+ * "how deep does it cut" with "how far did it get" — and once an overloaded
+ * blade could actually bog the machine down, the second term swamped the first
+ * and the measurement inverted.
+ */
+function driveMetres(v: Vehicle, t: Terrain, metres: number, capSeconds = 60): number {
+  const from = v.state.position.z;
+  const steps = Math.round(capSeconds / STEP);
+  for (let i = 0; i < steps && v.state.position.z - from < metres; i++) {
+    v.update(STEP, DRIVE, t);
+  }
+  return v.state.position.z - from;
+}
+
 describe('pitch articulation', () => {
   it('starts at the rest angle', () => {
     expect(blade(new Vehicle(bulldozerDef, SPAWN)).pitch).toBe(PITCH.rest);
@@ -96,15 +113,15 @@ describe('the carry / bite trade', () => {
     expect(blade(fwd).effectiveCapacity).toBeLessThan(base * 0.8);
   });
 
-  it('cuts more soil tipped forward than rolled back', () => {
-    /** Same pass, same blade elevation, only pitch differs. */
-    function soilMoved(pitchKey: string | null): number {
+  it('cuts deeper per metre tipped forward than rolled back', () => {
+    /** Excavation per metre travelled. Same blade elevation, only pitch differs. */
+    function cutPerMetre(pitchKey: string): number {
       const t = sand(2);
       const before = t.totalVolume();
       const v = new Vehicle(bulldozerDef, SPAWN);
-      if (pitchKey) drive(v, t, { [pitchKey]: 1 }, 5); // set pitch before digging
+      drive(v, t, { [pitchKey]: 1 }, 5); // set pitch before digging
       drive(v, t, { [LOWER]: 1 }, 1.2); // put the edge under the surface
-      drive(v, t, DRIVE, 6);
+      const travelled = driveMetres(v, t, 8);
       // Volume must not change at all; what differs is how much got rearranged.
       expect(t.totalVolume()).toBeCloseTo(before, 2);
 
@@ -113,14 +130,11 @@ describe('the carry / bite trade', () => {
       // have reached: it starts 2.9m AHEAD of the machine.
       let excavated = 0;
       for (let i = 0; i < t.height.length; i++) excavated += Math.max(0, 2 - t.height[i]);
-      return excavated * t.cellArea;
+      return (excavated * t.cellArea) / travelled;
     }
 
-    const back = soilMoved(BACK);
-    const forward = soilMoved(FORWARD);
-
     // Forward pitch drops the cutting edge in — that is why it digs.
-    expect(forward).toBeGreaterThan(back);
+    expect(cutPerMetre(FORWARD)).toBeGreaterThan(cutPerMetre(BACK));
   });
 
   it('drops the cutting edge as it tips forward', () => {
@@ -145,7 +159,7 @@ describe('spilling', () => {
       const v = new Vehicle(bulldozerDef, SPAWN);
       drive(v, t, { [pitchKey]: 1 }, 5);
       drive(v, t, { [LOWER]: 1 }, 1.2);
-      drive(v, t, DRIVE, 10);
+      driveMetres(v, t, 8);
 
       const halfWidth = bladeSpec.width / 2 + 0.3;
       let total = 0;

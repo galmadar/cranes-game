@@ -172,6 +172,8 @@ function fillLowestFirst(
   cells: readonly number[],
   volume: number,
   paint: MaterialId | null,
+  /** Height nothing may be raised above. What does not fit is returned unplaced. */
+  ceiling = Infinity,
 ): number {
   if (cells.length === 0 || volume <= 0) return 0;
 
@@ -183,7 +185,8 @@ function fillLowestFirst(
   let k = 1;
   while (k <= sorted.length && remaining > 1e-12) {
     const level = height[sorted[k - 1]];
-    const nextLevel = k < sorted.length ? height[sorted[k]] : Infinity;
+    if (level >= ceiling) break;
+    const nextLevel = Math.min(k < sorted.length ? height[sorted[k]] : Infinity, ceiling);
     const roomToNext = (nextLevel - level) * k * area;
 
     if (remaining <= roomToNext) {
@@ -481,9 +484,25 @@ export function applyBladeCut(params: BladeCutParams): BladeCutResult {
     // the instant it was crossed, which reads as the load randomly falling out
     // rather than as a blade you can feel filling up.
     const over = params.capacity > 0 ? (prowBefore - params.capacity) / params.capacity : 0;
-    const toSides = volumeCut * clamp(over, 0, 1) * TUNING.sideSpillFraction;
+    let toSides = volumeCut * clamp(over, 0, 1) * TUNING.sideSpillFraction;
 
-    deposited += fillLowestFirst(terrain, depositZone.cells, volumeCut - toSides, dominant);
+    // Nothing stacks higher than the top of the mouldboard. A prow towering
+    // over the blade — and over the machine — is the clearest tell that this
+    // is a height field rather than a dozer, and it is what the load rolling
+    // off the ends is FOR: soil that will not fit leaves out the sides, which
+    // is where the windrows down each side of a real pass come from.
+    const front = volumeCut - toSides;
+    const placedFront = fillLowestFirst(
+      terrain,
+      depositZone.cells,
+      front,
+      dominant,
+      // Measured from the material being pushed, not from the edge: a blade
+      // biting a metre under grade is buried, not holding a metre-deep prow.
+      Math.max(edgeY, datum) + params.bladeHeight,
+    );
+    deposited += placedFront;
+    toSides += front - placedFront;
 
     if (toSides > 0) {
       const sideHalfAcross = Math.max(terrain.cellSize, 0.4);
@@ -524,8 +543,19 @@ export function applyBladeCut(params: BladeCutParams): BladeCutResult {
   // removes a whole cell row at once, which at 60Hz reads as hundreds of m³/s
   // and pins resistance at maximum before the machine has done any work. Prow
   // volume is a state, not a rate, so it cannot spike.
+  //
+  // And it must keep climbing PAST a full blade. Capping it at capacity meant
+  // a prow of 10 m3 dragged exactly as hard as one of 3.4 — measured: constant
+  // 0.60 drag and a constant 1.62 m/s however much soil was in front. Nothing
+  // could ever bog the machine down, so nothing ever taught the player that a
+  // blade has a limit.
+  const fill = params.capacity > 0 ? prowVolume / params.capacity : 0;
   const loadResistance =
-    params.capacity > 0 ? Math.min(1, prowVolume / params.capacity) * TUNING.fullBladeResistance : 0;
+    fill <= 1
+      ? fill * TUNING.fullBladeResistance
+      : TUNING.fullBladeResistance +
+        (1 - TUNING.fullBladeResistance) *
+          clamp((fill - 1) / Math.max(TUNING.stallFill - 1, 1e-3), 0, 1);
   const resistance = Math.max(blocked ? TUNING.rockResistance : 0, loadResistance);
 
   let region = unionRect(cutZone.rect, depositZone.rect);

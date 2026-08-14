@@ -201,6 +201,23 @@ describe('blade implement (FR-2.4)', () => {
     expect(v.implementLoad).toBeGreaterThan(0);
   });
 
+  // The complaint this answers: "how much sand can a dozer actually push?
+  // Right now there's effectively no limit." There is one now, and getting
+  // stuck has to stay recoverable or it is just a dead end with extra steps.
+  it('bogs down under an overloaded blade but always reverses out', () => {
+    const terrain = flatWorld(MaterialId.SAND);
+    terrain.height.fill(3);
+    const v = new Vehicle(bulldozerDef, SPAWN);
+    drive(v, terrain, { ...forward, bladeLower: 1 }, 25);
+
+    expect(v.implementLoad).toBeGreaterThan(0.8);
+    expect(v.state.speed).toBeLessThan(bulldozerDef.locomotion.maxSpeed * 0.35);
+
+    const stuckAt = v.state.position.z;
+    drive(v, terrain, { ...reverse, bladeLower: 1 }, 3);
+    expect(v.state.position.z).toBeLessThan(stuckAt - 2);
+  });
+
   it('is slowed by a loaded blade', () => {
     const build = (bladeDown: boolean) => {
       const terrain = flatWorld(MaterialId.SAND);

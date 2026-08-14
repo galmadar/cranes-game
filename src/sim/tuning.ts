@@ -14,6 +14,8 @@
 export interface Tuning {
   /** Chassis drag from a completely full blade, 0..0.95. */
   fullBladeResistance: number;
+  /** Prow size, as a multiple of blade capacity, at which the machine stalls. */
+  stallFill: number;
   /** Chassis drag when the blade is buried in something it cannot cut. */
   rockResistance: number;
   /** Share of the cut rolling off the ends at double capacity. Ramps from zero. */
@@ -26,6 +28,7 @@ export interface Tuning {
 
 export const DEFAULT_TUNING: Readonly<Tuning> = Object.freeze({
   fullBladeResistance: 0.6,
+  stallFill: 2.2,
   rockResistance: 0.92,
   sideSpillFraction: 0.45,
   slumpPasses: 2,

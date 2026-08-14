@@ -293,20 +293,31 @@ describe('resistance', () => {
   });
 
   it('does report a heavy load when the blade is buried deep', () => {
-    // Ramming the blade well below grade SHOULD bog the machine down — up to
-    // whatever the configured full-blade drag is, rather than a magic number
-    // that goes stale the moment someone tunes the game.
+    // Ramming the blade well below grade SHOULD bog the machine down — at
+    // least as hard as a full blade, expressed against the tunable rather than
+    // a magic number that goes stale the moment someone retunes the game.
+    // Not yet a stall, though: one bite is not an overload.
     const GROUND = 3;
     const deep = cut(make(MaterialId.SAND, GROUND), { edgeY: GROUND - 1.3 });
-    expect(deep.resistance).toBeCloseTo(TUNING.fullBladeResistance, 5);
+    expect(deep.resistance).toBeGreaterThanOrEqual(TUNING.fullBladeResistance);
+    expect(deep.resistance).toBeLessThan(1);
   });
 
-  it('never fully stops the machine on diggable ground', () => {
+  // A blade that drags no harder at three times capacity than at capacity is a
+  // blade with no limit: measured in play, the machine pushed 10 m3 at exactly
+  // the same 1.62 m/s it pushed 3.4. Drag has to keep climbing past full.
+  it('keeps dragging harder as the prow grows past a full blade', () => {
     const t = make(MaterialId.SAND, 6);
+    let atCapacity = 0;
+    let overloaded = 0;
     for (let i = 0; i < 40; i++) {
       const r = cut(t, { centerZ: -1 + i * 0.05, edgeY: -0.5 });
-      expect(r.resistance).toBeLessThan(0.9);
+      if (r.prowVolume > 2.4 && atCapacity === 0) atCapacity = r.resistance;
+      if (r.prowVolume > 2.4 * TUNING.stallFill) overloaded = r.resistance;
     }
+    expect(atCapacity).toBeGreaterThan(0);
+    expect(overloaded).toBeGreaterThan(atCapacity);
+    expect(overloaded).toBeCloseTo(1, 5); // a prow this size stops the machine
   });
 });
 

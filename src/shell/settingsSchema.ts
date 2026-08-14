@@ -111,6 +111,7 @@ export function buildSettings(def: VehicleDefinition, site?: JobSite): SettingGr
     title: 'Soil',
     settings: [
       adv(num('fullBladeResistance', 'Full-blade drag', 0, 0.95, 0.01, '', TUNING, DEFAULT_TUNING, 'fullBladeResistance', 'How much a loaded blade slows the machine. Lower = stronger')),
+      adv(num('stallFill', 'Stall point', 1.2, 5, 0.1, '×', TUNING, DEFAULT_TUNING, 'stallFill', 'Blade loads before the machine bogs down. Lower = gets stuck sooner')),
       adv(num('rockResistance', 'Rock drag', 0, 0.98, 0.01, '', TUNING, DEFAULT_TUNING, 'rockResistance', 'How hard rock stops you')),
       adv(num('sideSpillFraction', 'Side spill', 0, 0.9, 0.01, '', TUNING, DEFAULT_TUNING, 'sideSpillFraction', 'Share of an overloaded cut that rolls off the ends')),
       adv(num('slumpPasses', 'Slump passes', 1, 8, 1, '', TUNING, DEFAULT_TUNING, 'slumpPasses', 'Higher settles piles faster and costs more CPU')),
