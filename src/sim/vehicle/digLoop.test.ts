@@ -41,6 +41,9 @@ interface Dig {
   worstPitch: number;
   slowest: number;
   heaviest: number;
+  /** Seconds spent with the blade so full the machine cannot pull it. */
+  stalledSeconds: number;
+  seconds: number;
 }
 
 function dig(input: ActionState, seconds: number): Dig {
@@ -53,6 +56,7 @@ function dig(input: ActionState, seconds: number): Dig {
   let worstPitch = 0;
   let slowest = Infinity;
   let heaviest = 0;
+  let stalledSteps = 0;
 
   for (let i = 0; i < Math.round(seconds / STEP); i++) {
     world.step(STEP, input);
@@ -63,9 +67,19 @@ function dig(input: ActionState, seconds: number): Dig {
     if (Math.abs(s.pitch) > worstPitch) worstPitch = Math.abs(s.pitch);
     if (s.speed < slowest) slowest = s.speed;
     if (vehicle.implementLoad > heaviest) heaviest = vehicle.implementLoad;
+    if (vehicle.implementLoad > 0.98) stalledSteps++;
   }
 
-  return { terrain, vehicle, floor, worstPitch, slowest, heaviest };
+  return {
+    terrain,
+    vehicle,
+    floor,
+    worstPitch,
+    slowest,
+    heaviest,
+    stalledSeconds: stalledSteps * STEP,
+    seconds: seconds - SETTLE_SECONDS,
+  };
 }
 
 const DIG: ActionState = { [Action.ThrottleForward]: 1, bladeLower: 1 };
@@ -112,6 +126,24 @@ describe('a blade with a limit', () => {
     const { slowest, heaviest } = dig(BITE, 30);
     expect(heaviest).toBeGreaterThan(0.95);
     expect(slowest).toBeLessThan(bulldozerDef.locomotion.maxSpeed * 0.15);
+  });
+
+  // The stall has to be an event, not a state. At stallFill 1.6 measured
+  // against the PITCH-REDUCED capacity it was a state: pitching forward to
+  // bite left the machine stalled for 37 of every 45 seconds, which is not a
+  // limit, it is a machine that does not work.
+  it('gets stuck sometimes without getting stuck permanently', () => {
+    const { stalledSeconds, seconds } = dig(BITE, 50);
+    expect(stalledSeconds).toBeGreaterThan(0.5);
+    expect(stalledSeconds).toBeLessThan(seconds * 0.4);
+  });
+
+  // Rolling the mouldboard forward changes what the blade HOLDS. It must not
+  // change what the machine can shove, which is engine and traction.
+  it('is no weaker at pushing for being pitched forward', () => {
+    const neutral = dig(DIG, 40);
+    const bitten = dig(BITE, 40);
+    expect(bitten.stalledSeconds).toBeLessThan(neutral.stalledSeconds + neutral.seconds * 0.3);
   });
 
   it('never heaps a prow that towers over the mouldboard', () => {

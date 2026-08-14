@@ -52,8 +52,16 @@ export interface BladeCutParams {
   bladeHeight: number;
   /** World Y of the cutting edge. Soil above this line is cut. */
   edgeY: number;
-  /** m³ the blade holds before soil rolls off the ends. */
+  /** m³ the blade holds before soil rolls off the ends. Pitch changes this. */
   capacity: number;
+  /**
+   * The machine's rated blade load, before pitch. Drag is measured against
+   * THIS, not against `capacity`: how much soil you can shove is a question of
+   * engine and traction, and rolling the mouldboard forward does not make the
+   * machine weaker. Measured with the two conflated, pitching forward to bite
+   * left the dozer stalled for 37 of every 45 seconds.
+   */
+  ratedCapacity?: number;
   /**
    * True when the cutting edge is at or below the machine's own ground line —
    * i.e. the blade is actually working the ground rather than riding over it.
@@ -549,7 +557,8 @@ export function applyBladeCut(params: BladeCutParams): BladeCutResult {
   // 0.60 drag and a constant 1.62 m/s however much soil was in front. Nothing
   // could ever bog the machine down, so nothing ever taught the player that a
   // blade has a limit.
-  const fill = params.capacity > 0 ? prowVolume / params.capacity : 0;
+  const rated = params.ratedCapacity ?? params.capacity;
+  const fill = rated > 0 ? prowVolume / rated : 0;
   const loadResistance =
     fill <= 1
       ? fill * TUNING.fullBladeResistance

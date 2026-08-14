@@ -28,7 +28,7 @@ export interface Tuning {
 
 export const DEFAULT_TUNING: Readonly<Tuning> = Object.freeze({
   fullBladeResistance: 0.6,
-  stallFill: 2.2,
+  stallFill: 1.6,
   rockResistance: 0.92,
   sideSpillFraction: 0.45,
   slumpPasses: 2,

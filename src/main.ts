@@ -67,6 +67,11 @@ window.addEventListener('keydown', (e) => {
     else settings.toggle();
     return;
   }
+  if (e.code === 'F1') {
+    e.preventDefault(); // or the browser opens its own help
+    hud.toggleHelp();
+    return;
+  }
   if (typing) return;
   if (e.code === 'KeyC') renderer.chase.recenter();
   if (e.code === 'KeyV') renderer.chase.cycleMode();

@@ -41,6 +41,16 @@ export interface HudStats {
   cameraMode: string;
 }
 
+const HELP_KEY = 'cranes-help-visible';
+
+function loadHelpVisible(): boolean {
+  try {
+    return localStorage.getItem(HELP_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   className?: string,
@@ -73,6 +83,8 @@ const ROWS = [
 export class Hud {
   private readonly values = new Map<string, HTMLElement>();
   private readonly title: HTMLElement;
+  /** The controls cheat-sheet. Useful on day one, in the way by day two. */
+  private readonly help: HTMLElement;
 
   constructor(
     parent: HTMLElement,
@@ -135,6 +147,7 @@ export class Hud {
         'div',
         'legend-row',
         '<kbd>G</kbd> <span class="tag">grade overlay</span> ' +
+          '<kbd>F1</kbd> <span class="tag">hide this panel</span> ' +
           '<kbd>P</kbd> <span class="tag">post FX</span> ' +
           '<kbd>Esc</kbd> <span class="tag">settings</span>',
       ),
@@ -149,7 +162,28 @@ export class Hud {
       ),
     );
 
+    this.help = help;
     parent.append(stats, legend, help);
+    this.setHelpVisible(loadHelpVisible());
+  }
+
+  /**
+   * Show or hide the controls cheat-sheet.
+   *
+   * Remembered, because someone who has hidden it has learnt the keys and does
+   * not want to dismiss it again every reload.
+   */
+  setHelpVisible(visible: boolean): void {
+    this.help.style.display = visible ? '' : 'none';
+    try {
+      localStorage.setItem(HELP_KEY, visible ? '1' : '0');
+    } catch {
+      /* storage unavailable — it still toggled */
+    }
+  }
+
+  toggleHelp(): void {
+    this.setHelpVisible(this.help.style.display === 'none');
   }
 
   update(stats: HudStats): void {

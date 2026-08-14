@@ -153,6 +153,7 @@ export class BladeImplement implements Implement {
       thickness: this.spec.thickness,
       edgeY: pos.y + state.height - this.edgeDrop(state.pitch),
       capacity: state.effectiveCapacity,
+      ratedCapacity: this.spec.capacity,
     });
 
     state.carriedVolume = result.prowVolume;
