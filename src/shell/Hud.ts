@@ -127,7 +127,7 @@ export class Hud {
         '<kbd>drag</kbd> <span class="tag">set angle (it stays)</span> ' +
           '<kbd>wheel</kbd> <span class="tag">zoom</span> ' +
           '<kbd>C</kbd> <span class="tag">recenter</span> ' +
-          '<kbd>V</kbd> <span class="tag">chase / fixed camera</span>',
+          '<kbd>V</kbd> <span class="tag">next camera view</span>',
       ),
     );
     help.appendChild(

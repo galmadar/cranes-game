@@ -1,5 +1,5 @@
 /**
- * ChaseCamera — follows the active machine (FR-6.1), in one of two modes.
+ * ChaseCamera — follows the active machine (FR-6.1), in one of several views.
  *
  * Replaces OrbitControls: orbiting a fixed origin is wrong once something is
  * driving around.
@@ -10,17 +10,45 @@
  * a side view is to watch the blade move soil from that side. A camera that
  * creeps back to centre fights the player every time they line up a shot.
  *
- * `chase` holds the offset relative to the machine's HEADING, so a side view
- * stays a side view when the dozer turns. `fixed` holds it relative to the
- * WORLD: the camera stands still and pans to track, like a broadcast camera on
- * a tripod, drifting only once the machine pulls past its leash. Same gesture,
- * different frame of reference.
+ * The views differ in exactly two ways, and everything else is shared. A view
+ * holds its yaw either relative to the machine's HEADING — so a side view stays
+ * a side view when the dozer turns — or relative to the WORLD, which is what
+ * makes a camera stand still and pan to track, like a broadcast camera on a
+ * tripod. And a world-framed view carries a leash: it drifts only once the
+ * machine pulls past it. Same gesture, different frame of reference.
  */
 
 import * as THREE from 'three';
 import type { Vec3 } from '../sim/math/Vec';
 
-export type CameraMode = 'chase' | 'fixed';
+export type CameraMode = 'chase' | 'fixed' | 'cab' | 'top';
+
+interface View {
+  label: string;
+  /** Which frame the yaw is held in. World-relative is what stands the camera still. */
+  frame: 'heading' | 'world';
+  distance: number;
+  pitch: number;
+  /** Metres the machine may stray before the camera gives up and follows. */
+  leash: number;
+  /** How far ahead of the machine to aim, metres. The blade is not the cab. */
+  focusAhead: number;
+}
+
+/**
+ * The cycle, in order.
+ *
+ * Deliberately a list rather than a pair: the ask was to toggle BETWEEN views,
+ * and a boolean can only ever hold two. Adding one is a line here.
+ */
+const VIEWS: Record<CameraMode, View> = {
+  chase: { label: 'Chase · follows', frame: 'heading', distance: 16, pitch: 0.44, leash: 0, focusAhead: 0 },
+  fixed: { label: 'Fixed · locked', frame: 'world', distance: 34, pitch: 0.3, leash: 12, focusAhead: 0 },
+  cab: { label: 'Cab · over the blade', frame: 'heading', distance: 8, pitch: 0.3, leash: 0, focusAhead: 3.2 },
+  top: { label: 'Top · reads grade', frame: 'heading', distance: 30, pitch: 1.15, leash: 0, focusAhead: 0 },
+};
+
+const ORDER: readonly CameraMode[] = ['chase', 'fixed', 'cab', 'top'];
 
 /** Frame-rate independent exponential smoothing. */
 function damp(current: number, target: number, lambda: number, dt: number): number {
@@ -33,15 +61,6 @@ const MIN_DISTANCE = 6;
 const MAX_DISTANCE = 90;
 /** How briskly `recenter()` swings back behind the machine. */
 const RECENTER_RATE = 7;
-
-/**
- * How far the machine may stray from a fixed camera's subject point, metres.
- *
- * Without a leash a locked camera is only usable in the yard it was planted
- * in; with one it behaves like a broadcast camera sliding down the touchline —
- * still, until the play leaves the frame.
- */
-const LEASH = 12;
 /** How lazily the tripod slides once the leash is taut. Slow enough to read as drift. */
 const LEASH_RATE = 2.2;
 
@@ -57,16 +76,22 @@ export class ChaseCamera {
 
   private mode_: CameraMode = 'chase';
 
-  /** Chase: yaw relative to the machine's heading. */
+  /** Heading-framed views: yaw relative to the machine. */
   private yawOffset = 0;
-  /** Fixed: yaw relative to the world, which is what makes the camera stand still. */
+  /** World-framed views: yaw relative to the world, which is what stands still. */
   private worldYaw = 0;
-  private pitch = 0.44;
-  private distance = 16;
 
-  /** What the camera points at — always the machine. */
+  /**
+   * Zoom and elevation, remembered per view.
+   *
+   * Shared state would mean framing the cab view close ruined the locked view
+   * you had set up, and you would stop switching.
+   */
+  private readonly framing: Record<CameraMode, { distance: number; pitch: number }>;
+
+  /** What the camera points at. */
   private readonly lookAt = new THREE.Vector3();
-  /** What a fixed camera orbits. Decoupling this from `lookAt` is the whole mode. */
+  /** What a world-framed view orbits. Decoupling this from `lookAt` is the mode. */
   private readonly anchor = new THREE.Vector3();
   private lastHeading = 0;
 
@@ -82,6 +107,10 @@ export class ChaseCamera {
     this.domElement = domElement;
     this.camera = new THREE.PerspectiveCamera(58, aspect, 0.3, 2000);
 
+    this.framing = Object.fromEntries(
+      ORDER.map((m) => [m, { distance: VIEWS[m].distance, pitch: VIEWS[m].pitch }]),
+    ) as Record<CameraMode, { distance: number; pitch: number }>;
+
     domElement.addEventListener('pointerdown', this.onPointerDown);
     domElement.addEventListener('pointermove', this.onPointerMove);
     domElement.addEventListener('pointerup', this.onPointerUp);
@@ -95,33 +124,39 @@ export class ChaseCamera {
   }
 
   get modeLabel(): string {
-    return this.mode_ === 'chase' ? 'Chase · follows' : 'Fixed · locked';
+    return VIEWS[this.mode_].label;
   }
 
+  /** Step to the next view in the cycle. */
   cycleMode(): CameraMode {
-    this.setMode(this.mode_ === 'chase' ? 'fixed' : 'chase');
+    const next = ORDER[(ORDER.indexOf(this.mode_) + 1) % ORDER.length];
+    this.setMode(next);
     return this.mode_;
   }
 
   /**
-   * Switching never moves the picture. Converting the yaw between frames of
-   * reference costs one line and saves the player re-finding their shot.
+   * Switching never spins the picture. Converting the yaw between frames of
+   * reference costs one line and saves the player re-finding their bearing.
    */
   setMode(mode: CameraMode): void {
     if (mode === this.mode_) return;
-    if (mode === 'fixed') {
+    const wasWorld = VIEWS[this.mode_].frame === 'world';
+    const isWorld = VIEWS[mode].frame === 'world';
+
+    if (isWorld && !wasWorld) {
       this.worldYaw = wrapPi(this.lastHeading + this.yawOffset);
       this.anchor.copy(this.lookAt);
-    } else {
+    } else if (!isWorld && wasWorld) {
       this.yawOffset = wrapPi(this.worldYaw - this.lastHeading);
     }
+
     this.recentering = false;
     this.mode_ = mode;
   }
 
   /** Ease back behind the machine. The only thing that moves the angle on its own. */
   recenter(): void {
-    if (this.mode_ === 'fixed') {
+    if (VIEWS[this.mode_].frame === 'world') {
       // Nothing to ease — re-plant the tripod behind the machine instead.
       this.worldYaw = this.lastHeading;
       this.anchor.copy(this.lookAt);
@@ -137,11 +172,14 @@ export class ChaseCamera {
     groundHeightAt: (x: number, z: number) => number,
   ): void {
     this.lastHeading = heading;
+    const view = VIEWS[this.mode_];
+    const framing = this.framing[this.mode_];
 
-    // Look slightly above the origin — at the cab, not the tracks.
-    const focusX = position.x;
+    // Look slightly above the origin — at the cab, not the tracks — and, for
+    // views that ask for it, ahead of the machine at the work itself.
+    const focusX = position.x + Math.sin(heading) * view.focusAhead;
     const focusY = position.y + 1.7;
-    const focusZ = position.z;
+    const focusZ = position.z + Math.cos(heading) * view.focusAhead;
 
     if (!this.initialised) {
       this.lookAt.set(focusX, focusY, focusZ);
@@ -157,9 +195,9 @@ export class ChaseCamera {
 
     let yaw: number;
     let pivot: THREE.Vector3;
-    if (this.mode_ === 'fixed') {
+    if (view.frame === 'world') {
       yaw = this.worldYaw;
-      pivot = this.updateAnchor(dt, groundHeightAt);
+      pivot = this.updateAnchor(dt, view.leash, groundHeightAt);
     } else {
       if (this.recentering) {
         this.yawOffset = damp(this.yawOffset, 0, RECENTER_RATE, dt);
@@ -172,10 +210,10 @@ export class ChaseCamera {
       pivot = this.lookAt;
     }
 
-    const horizontal = this.distance * Math.cos(this.pitch);
+    const horizontal = framing.distance * Math.cos(framing.pitch);
     const camX = pivot.x - Math.sin(yaw) * horizontal;
     const camZ = pivot.z - Math.cos(yaw) * horizontal;
-    let camY = pivot.y + this.distance * Math.sin(this.pitch);
+    let camY = pivot.y + framing.distance * Math.sin(framing.pitch);
 
     // Never let a hill swallow the camera.
     const floor = groundHeightAt(camX, camZ) + 1.2;
@@ -188,13 +226,14 @@ export class ChaseCamera {
   /** Drag the tripod's subject point along, but only once the leash is taut. */
   private updateAnchor(
     dt: number,
+    leash: number,
     groundHeightAt: (x: number, z: number) => number,
   ): THREE.Vector3 {
     const dx = this.lookAt.x - this.anchor.x;
     const dz = this.lookAt.z - this.anchor.z;
     const away = Math.hypot(dx, dz);
-    if (away > LEASH) {
-      const k = (away - LEASH) / away;
+    if (away > leash) {
+      const k = (away - leash) / away;
       this.anchor.x = damp(this.anchor.x, this.anchor.x + dx * k, LEASH_RATE, dt);
       this.anchor.z = damp(this.anchor.z, this.anchor.z + dz * k, LEASH_RATE, dt);
       // Follow the ground it slid over, or the camera sinks into a rise.
@@ -238,9 +277,13 @@ export class ChaseCamera {
     this.lastX = event.clientX;
     this.lastY = event.clientY;
 
-    if (this.mode_ === 'fixed') this.worldYaw = wrapPi(this.worldYaw - dx * 0.006);
-    else this.yawOffset = wrapPi(this.yawOffset - dx * 0.006);
-    this.pitch = Math.min(MAX_PITCH, Math.max(MIN_PITCH, this.pitch + dy * 0.005));
+    if (VIEWS[this.mode_].frame === 'world') {
+      this.worldYaw = wrapPi(this.worldYaw - dx * 0.006);
+    } else {
+      this.yawOffset = wrapPi(this.yawOffset - dx * 0.006);
+    }
+    const framing = this.framing[this.mode_];
+    framing.pitch = Math.min(MAX_PITCH, Math.max(MIN_PITCH, framing.pitch + dy * 0.005));
   };
 
   private readonly onPointerUp = (event: PointerEvent): void => {
@@ -254,7 +297,8 @@ export class ChaseCamera {
   private readonly onWheel = (event: WheelEvent): void => {
     event.preventDefault();
     const factor = Math.exp(event.deltaY * 0.0012);
-    this.distance = Math.min(MAX_DISTANCE, Math.max(MIN_DISTANCE, this.distance * factor));
+    const framing = this.framing[this.mode_];
+    framing.distance = Math.min(MAX_DISTANCE, Math.max(MIN_DISTANCE, framing.distance * factor));
   };
 
   private readonly onContextMenu = (event: Event): void => {
