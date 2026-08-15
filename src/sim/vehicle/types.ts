@@ -108,7 +108,78 @@ export interface BladePitchSpec {
   edgeAhead: number;
 }
 
-export type ImplementSpec = BladeSpec;
+/**
+ * Crane — slew, luff, hoist and a hook, as ONE implement.
+ *
+ * Deliberately not three. The boom, the winch and the turntable are a single
+ * kinematic chain: where the hook is depends on all three at once, and splitting
+ * them would mean each implement reading the other two's state to answer the
+ * only question that matters.
+ */
+export interface CraneSpec {
+  kind: 'crane';
+  id: string;
+
+  /** Turntable rotation, independent of which way the tracks point. */
+  slew: { leftAction: ActionId; rightAction: ActionId; speed: number };
+  /**
+   * Turning the load on the hook — the tag line.
+   *
+   * Its own control, and it has to be. A load on a single hook does not know
+   * which way the house is pointing; riggers turn it by hand on a rope. Tying
+   * it to slew instead made bearing and position the SAME control: reaching a
+   * pad meant slewing to point at it, which fixed the load's bearing to the
+   * line from the crane, so which way a beam ended up lying was decided
+   * entirely by where you parked. Measured, that left a beam 1.2 m onto its
+   * pad and 12 degrees out with no control that could fix it.
+   */
+  turn: { leftAction: ActionId; rightAction: ActionId; speed: number };
+  /** Boom angle from horizontal. Higher is steeper, closer, and stronger. */
+  luff: AxisSpec;
+  /** Rope paid out below the boom head. Larger is lower. */
+  hoist: AxisSpec;
+  /** Picks up a load under the hook, or sets down the one on it. */
+  hookAction: ActionId;
+
+  /** Boom foot, in the slewing superstructure's frame. */
+  pivot: { y: number; z: number };
+  /** Lattice boom: fixed. Telescoping would make this a second hoist axis. */
+  boomLength: number;
+
+  /**
+   * Rated load in tonnes, and the radius out to which the crane holds it.
+   *
+   * Beyond `minRadius` the chart falls as a constant load moment — double the
+   * radius, halve the load. That is close enough to a real capacity chart to
+   * teach the only lesson that matters: reach costs you lifting power.
+   */
+  maxLoad: number;
+  minRadius: number;
+
+  /** How close the hook must come to a load's lug to pick it up, metres. */
+  hookRadius: number;
+  /** Sling from the hook block down to the top of the load, metres. */
+  slingLength: number;
+}
+
+/**
+ * A driven axis with travel limits — luff and hoist are the same shape.
+ *
+ * Named for the NUMBER, not for the direction the load moves, because those
+ * disagree on the hoist: paying rope out increases the axis and lowers the
+ * hook. Each spec says which key it hangs on, so the def stays readable.
+ */
+export interface AxisSpec {
+  increaseAction: ActionId;
+  decreaseAction: ActionId;
+  min: number;
+  max: number;
+  rest: number;
+  /** Units per second — radians for luff, metres for hoist. */
+  speed: number;
+}
+
+export type ImplementSpec = BladeSpec | CraneSpec;
 
 export interface BladeState {
   kind: 'blade';
@@ -142,7 +213,48 @@ export interface BladeState {
   effectiveCapacity: number;
 }
 
-export type ImplementState = BladeState;
+export interface CraneState {
+  kind: 'crane';
+  /** Superstructure bearing relative to the tracks, radians. */
+  slew: number;
+  /** Boom angle above horizontal, radians. */
+  luff: number;
+  /** Rope paid out below the boom head, metres. */
+  rope: number;
+
+  /** Boom head, world space. Derived every step; the view reads it. */
+  head: Vec3;
+  /** Hook block, world space. What a load hangs from. */
+  hook: Vec3;
+
+  /**
+   * Hook swing away from plumb, metres, in world axes.
+   *
+   * A swinging load is the crane's whole difficulty — slew fast and the load
+   * keeps going after you stop. Carried as position + velocity rather than as
+   * an angle so the pendulum stays a plain second-order system.
+   */
+  swayX: number;
+  swayZ: number;
+  swayVX: number;
+  swayVZ: number;
+
+  /** Horizontal distance from the slew centre to the hook, metres. */
+  radius: number;
+  /** What the chart allows at that radius, tonnes. */
+  ratedLoad: number;
+  /** Tonnes currently on the hook. */
+  hookLoad: number;
+  /** Load over rated. Past 1 the limiter cuts out. */
+  loadFraction: number;
+  /** True while the limiter is refusing to make the overload worse. */
+  limited: boolean;
+
+  /** Id of the load on the hook, or null. */
+  hookedPayloadId: string | null;
+}
+
+export type ImplementState = BladeState | CraneState;
 
 // ----------------------------------------------------------------- vehicle
 

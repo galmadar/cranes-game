@@ -8,6 +8,7 @@
  */
 
 import type { ActionState } from '../../input/actions';
+import type { Payload } from '../../payload/Payload';
 import type { Rect, Terrain } from '../../Terrain';
 import type { ImplementSpec, ImplementState, VehicleDefinition, VehicleState } from '../types';
 
@@ -28,6 +29,18 @@ export interface ImplementContext {
   terrain: Terrain;
   def: VehicleDefinition;
   gradeAt: GradeQuery;
+
+  /**
+   * Loose loads in the world. Empty for anything that only moves soil.
+   *
+   * The one thing the crane needed that this interface did not already have,
+   * and worth being blunt about: the file above claims adding a crane would not
+   * force a change in here, and it did. A blade's entire world is the height
+   * field under it; a crane has to find an OBJECT and take hold of it, and no
+   * amount of terrain access substitutes for that. The rest of the claim held —
+   * Vehicle, Terrain and the loop are untouched.
+   */
+  payloads: readonly Payload[];
 
   /**
    * Drag on the chassis, 0..1. A loaded blade slows the machine; a blade

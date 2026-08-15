@@ -22,7 +22,7 @@ import { MaterialId } from '../../materials';
 import { Terrain } from '../../Terrain';
 import { World } from '../../World';
 import { Vehicle } from '../Vehicle';
-import type { BladeState } from '../types';
+import type { BladeSpec, BladeState } from '../types';
 import { NO_GRADE, type GradeQuery } from './Implement';
 
 const STEP = 1 / 60;
@@ -261,7 +261,8 @@ describe('the grade query itself', () => {
     const cx = Math.round((site.bounds.x0 + site.bounds.x1) / 2);
     const cz = Math.round((site.bounds.z0 + site.bounds.z1) / 2);
     v.state.position.x = terrain.cellToWorldX(cx);
-    v.state.position.z = terrain.cellToWorldZ(cz) - bulldozerDef.implements[0].reach;
+    const bladeSpec = bulldozerDef.implements[0] as BladeSpec;
+    v.state.position.z = terrain.cellToWorldZ(cz) - bladeSpec.reach;
     v.state.heading = 0;
 
     world.step(STEP, TAP);

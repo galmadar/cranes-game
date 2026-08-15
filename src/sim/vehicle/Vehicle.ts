@@ -8,8 +8,10 @@
 import { Action, actionAxis, type ActionState } from '../input/actions';
 import { materialOf } from '../materials';
 import { clamp, moveToward, vec3 } from '../math/Vec';
+import type { Payload } from '../payload/Payload';
 import type { Rect, Terrain } from '../Terrain';
 import { BladeImplement } from './implements/BladeImplement';
+import { CraneImplement } from './implements/CraneImplement';
 import {
   NO_GRADE,
   type GradeQuery,
@@ -51,11 +53,13 @@ function buildImplement(spec: ImplementSpec): Implement {
   switch (spec.kind) {
     case 'blade':
       return new BladeImplement(spec);
+    case 'crane':
+      return new CraneImplement(spec);
     default: {
       // Exhaustiveness guard: adding an implement kind without a factory is a
       // compile error, not a silent no-op at runtime.
-      const never: never = spec.kind;
-      throw new Error(`Unsupported implement kind: ${String(never)}`);
+      const never: never = spec;
+      throw new Error(`Unsupported implement kind: ${String((never as ImplementSpec).kind)}`);
     }
   }
 }
@@ -98,7 +102,13 @@ export class Vehicle {
   private resistance = 0;
   private pendingSlump: Rect | null = null;
 
-  update(dt: number, input: ActionState, terrain: Terrain, gradeAt: GradeQuery = NO_GRADE): void {
+  update(
+    dt: number,
+    input: ActionState,
+    terrain: Terrain,
+    gradeAt: GradeQuery = NO_GRADE,
+    payloads: readonly Payload[] = [],
+  ): void {
     this.updateLocomotion(dt, input, terrain);
 
     // A plain object rather than closed-over locals: implements write to it
@@ -112,6 +122,7 @@ export class Vehicle {
       terrain,
       def: this.def,
       gradeAt,
+      payloads,
       addResistance(value) {
         if (value > collected.resistance) collected.resistance = value;
       },
@@ -143,6 +154,15 @@ export class Vehicle {
   /** 0..1 drag currently coming from the implements. */
   get implementLoad(): number {
     return this.resistance;
+  }
+
+  /** Loads let go clear of the ground since this was last asked. Resets. */
+  consumeDroppedLoads(): number {
+    let total = 0;
+    for (const impl of this.implements) {
+      if (impl instanceof CraneImplement) total += impl.consumeDropped();
+    }
+    return total;
   }
 
   private updateLocomotion(dt: number, input: ActionState, terrain: Terrain): void {

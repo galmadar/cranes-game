@@ -10,6 +10,7 @@
  *   - a rock berm around the perimeter   -> the yard reads as bounded
  */
 
+import { createPadLevelJob } from '../jobs/padLevel';
 import { MaterialId } from '../../sim/materials';
 import { fbm, makeValueNoise2D } from '../../sim/math/noise';
 import { lerp, smoothstep, vec3 } from '../../sim/math/Vec';
@@ -37,6 +38,9 @@ export const sandboxMap: MapDefinition = {
   cellSize: CELL,
 
   spawn: { position: vec3(0, 0, 0), heading: 0 },
+  defaultVehicleId: 'bulldozer',
+
+  createJob: createPadLevelJob,
 
   generate() {
     const count = WIDTH * DEPTH;

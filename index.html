@@ -52,7 +52,8 @@
       .legend-row .tag { color: var(--hud-dim); }
 
       /* --- objective banner ------------------------------------------------ */
-      #hud-job {
+      /* Grading and lift contracts share the slot; a site has one or the other. */
+      #hud-job, #hud-lift {
         top: 12px; left: 50%; transform: translateX(-50%);
         width: 380px; max-width: calc(100vw - 24px);
         text-align: left;
@@ -103,10 +104,31 @@
       }
       .job-result strong { color: #5fd08a; font-size: 12.5px; }
 
+      /* --- lift contract: a list of pads, not a bar -------------------------
+         Four discrete placements make a percentage useless. An open pad says
+         how far off the nearest matching load is, which is something you can
+         act on; a filled one goes quiet. */
+      .lift-row {
+        display: flex; align-items: baseline; gap: 8px;
+        padding: 2px 0; font-size: 11.5px;
+      }
+      .lift-mark { width: 10px; flex: 0 0 auto; color: var(--hud-accent); }
+      .lift-label { flex: 1 1 auto; }
+      .lift-detail {
+        flex: 0 0 auto; color: var(--hud-dim); font-variant-numeric: tabular-nums;
+      }
+      .lift-row.is-placed { color: var(--hud-dim); }
+      .lift-row.is-placed .lift-mark { color: #5fd08a; }
+      #hud-lift.is-complete { border-color: rgba(95, 208, 138, 0.5); }
+
+      /* A machine readout that needs looking at: overload, blocked, saturated. */
+      .hud dd.is-alert { color: #ff8b6b; }
+
       /* HUD panels step aside while the drawer is open. */
       body.settings-open #hud-legend,
       body.settings-open #hud-help { opacity: 0; transition: opacity 0.12s ease; }
-      body.settings-open #hud-job { transform: translateX(calc(-50% - 170px)); transition: transform 0.18s ease; }
+      body.settings-open #hud-job,
+      body.settings-open #hud-lift { transform: translateX(calc(-50% - 170px)); transition: transform 0.18s ease; }
 
       /* --- settings drawer ------------------------------------------------ */
       .settings {

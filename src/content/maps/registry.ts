@@ -5,10 +5,11 @@
  * changes. The vehicle registry lands in M2 with exactly this shape.
  */
 
+import { liftYardMap } from './liftYard';
 import { sandboxMap } from './sandbox';
 import type { MapDefinition } from './types';
 
-export const MAPS: readonly MapDefinition[] = [sandboxMap];
+export const MAPS: readonly MapDefinition[] = [sandboxMap, liftYardMap];
 
 export const DEFAULT_MAP_ID = sandboxMap.id;
 

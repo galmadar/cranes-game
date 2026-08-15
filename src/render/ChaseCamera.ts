@@ -44,7 +44,9 @@ interface View {
 const VIEWS: Record<CameraMode, View> = {
   chase: { label: 'Chase · follows', frame: 'heading', distance: 16, pitch: 0.44, leash: 0, focusAhead: 0 },
   fixed: { label: 'Fixed · locked', frame: 'world', distance: 34, pitch: 0.3, leash: 12, focusAhead: 0 },
-  cab: { label: 'Cab · over the blade', frame: 'heading', distance: 11, pitch: 0.66, leash: 0, focusAhead: 3.2 },
+  // Named for the framing, not for the blade: the same view on a crane is the
+  // one you use to watch a load land, and there is no blade anywhere near it.
+  cab: { label: 'Cab · close in', frame: 'heading', distance: 11, pitch: 0.66, leash: 0, focusAhead: 3.2 },
   top: { label: 'Top · reads grade', frame: 'heading', distance: 30, pitch: 1.15, leash: 0, focusAhead: 0 },
 };
 
@@ -71,8 +73,29 @@ function wrapPi(a: number): number {
   return r - Math.PI;
 }
 
+/**
+ * How the camera is sized to the machine.
+ *
+ * Every distance here was set by driving a 5.2 m dozer, and a crane makes that
+ * assumption visible: a 22 m boom standing on a machine framed from sixteen
+ * metres away goes straight out of the top of the screen, and the player spends
+ * the game looking at the tracks of a machine whose whole job is above them.
+ * The eye height matters as much as the standoff — aim at the tracks and the
+ * boom is off frame however far back you stand.
+ */
+export interface CameraFraming {
+  /** Multiplies every view's standoff. 1 is the dozer this was tuned on. */
+  scale: number;
+  /** Where the camera looks, metres above the machine's ground line. */
+  eyeHeight: number;
+}
+
+const DEFAULT_FRAMING: CameraFraming = { scale: 1, eyeHeight: 1.7 };
+
 export class ChaseCamera {
   readonly camera: THREE.PerspectiveCamera;
+
+  private readonly framingSpec: CameraFraming;
 
   private mode_: CameraMode = 'chase';
 
@@ -111,12 +134,13 @@ export class ChaseCamera {
   private recentering = false;
   private initialised = false;
 
-  constructor(domElement: HTMLElement, aspect = 1) {
+  constructor(domElement: HTMLElement, aspect = 1, framing: CameraFraming = DEFAULT_FRAMING) {
     this.domElement = domElement;
+    this.framingSpec = framing;
     this.camera = new THREE.PerspectiveCamera(58, aspect, 0.3, 2000);
 
     this.framing = Object.fromEntries(
-      ORDER.map((m) => [m, { distance: VIEWS[m].distance, pitch: VIEWS[m].pitch }]),
+      ORDER.map((m) => [m, { distance: VIEWS[m].distance * framing.scale, pitch: VIEWS[m].pitch }]),
     ) as Record<CameraMode, { distance: number; pitch: number }>;
 
     domElement.addEventListener('pointerdown', this.onPointerDown);
@@ -183,9 +207,10 @@ export class ChaseCamera {
     const view = VIEWS[this.mode_];
     const framing = this.framing[this.mode_];
 
-    // Slightly above the origin — at the cab, not the tracks.
+    // Above the origin — at the cab, not the tracks. On a crane, high enough
+    // that the boom is in shot rather than off the top of it.
     const focusX = position.x;
-    const focusY = position.y + 1.7;
+    const focusY = position.y + this.framingSpec.eyeHeight;
     const focusZ = position.z;
     // And, for views that ask for it, aim ahead at the work rather than the machine.
     const aimX = focusX + Math.sin(heading) * view.focusAhead;
@@ -314,7 +339,12 @@ export class ChaseCamera {
     event.preventDefault();
     const factor = Math.exp(event.deltaY * 0.0012);
     const framing = this.framing[this.mode_];
-    framing.distance = Math.min(MAX_DISTANCE, Math.max(MIN_DISTANCE, framing.distance * factor));
+    // Zoom limits scale with the machine too, or a crane cannot be pulled back
+    // far enough to see and a dozer can be pushed further out than is useful.
+    framing.distance = Math.min(
+      MAX_DISTANCE * this.framingSpec.scale,
+      Math.max(MIN_DISTANCE * this.framingSpec.scale, framing.distance * factor),
+    );
   };
 
   private readonly onContextMenu = (event: Event): void => {

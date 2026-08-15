@@ -24,6 +24,17 @@ export interface Tuning {
   slumpPasses: number;
   /** Fraction of the legal correction applied per pass. Below 1 for damping. */
   slumpRelaxation: number;
+
+  /**
+   * Hook pendulum damping as a fraction of critical, 0..1.
+   *
+   * A real load on a long rope is very nearly undamped, and a very nearly
+   * undamped load is unplayable — it never stops. This is the dial between
+   * "the crane is the hard part" and "the crane is the annoying part".
+   */
+  swayDamping: number;
+  /** Furthest the hook may swing from plumb, as a fraction of rope length. */
+  maxSwingFraction: number;
 }
 
 export const DEFAULT_TUNING: Readonly<Tuning> = Object.freeze({
@@ -33,6 +44,9 @@ export const DEFAULT_TUNING: Readonly<Tuning> = Object.freeze({
   sideSpillFraction: 0.45,
   slumpPasses: 2,
   slumpRelaxation: 0.5,
+
+  swayDamping: 0.16,
+  maxSwingFraction: 0.55,
 });
 
 export const TUNING: Tuning = { ...DEFAULT_TUNING };

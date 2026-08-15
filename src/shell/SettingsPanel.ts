@@ -16,9 +16,11 @@ import type { SettingDef, SettingGroup } from './settingsSchema';
  * Bumped when the storage FORMAT changes. v1 snapshotted every value, which
  * meant a saved session pinned the game to old defaults forever — a retuned
  * par time or tolerance could never reach a player who had touched a slider
- * once. v2 stores only genuine overrides.
+ * once. v2 stores only genuine overrides. v3 namespaces each override to
+ * whatever owns it, because "Top speed" is not one number once there is more
+ * than one machine.
  */
-const STORAGE_KEY = 'cranes-tuning-v2';
+const STORAGE_KEY = 'cranes-tuning-v3';
 
 /** Separate key: this is a view preference, not a tuning override. */
 const MODE_KEY = 'cranes-settings-advanced';
@@ -207,12 +209,16 @@ export class SettingsPanel {
     for (const group of this.groups) for (const setting of group.settings) fn(setting);
   }
 
+  /** Resets what is on screen. Another machine's tuning is not this button's. */
   private resetAll(): void {
     this.eachSetting((s) => s.reset());
     this.syncInputs();
     this.onChange?.();
+
+    const data = readStore();
+    this.eachSetting((s) => delete data[s.id]);
     try {
-      localStorage.removeItem(STORAGE_KEY);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch {
       /* storage unavailable — the reset still applied in memory */
     }
@@ -227,12 +233,22 @@ export class SettingsPanel {
     });
   }
 
+  /**
+   * Write this panel's overrides, leaving everyone else's alone.
+   *
+   * Merged, not replaced. The panel only ever contains the settings for the
+   * machine and site currently loaded, so writing a fresh object erased the
+   * tuning for every OTHER machine — touch one slider on the crane and the
+   * bulldozer you spent a session tuning was back to shipped defaults, with
+   * nothing on screen to say so.
+   */
   private save(): void {
+    const data = readStore();
     // Only what differs from source. Anything left out picks up the shipped
     // default on the next load, so retuning the game still reaches players.
-    const data: Record<string, number> = {};
     this.eachSetting((s) => {
-      if (s.get() !== s.defaultValue) data[s.id] = s.get();
+      if (s.get() === s.defaultValue) delete data[s.id];
+      else data[s.id] = s.get();
     });
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -242,21 +258,29 @@ export class SettingsPanel {
   }
 
   private load(): void {
-    let data: Record<string, unknown>;
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      data = JSON.parse(raw) as Record<string, unknown>;
-    } catch {
-      return; // corrupt or unavailable — fall back to shipped defaults
-    }
-
+    const data = readStore();
     this.eachSetting((s) => {
       const value = data[s.id];
       if (typeof value !== 'number' || !Number.isFinite(value)) return;
       s.set(Math.min(s.max, Math.max(s.min, value)));
     });
     this.syncInputs();
+  }
+}
+
+/** Every override on disk, including those belonging to machines not loaded. */
+function readStore(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const out: Record<string, number> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value === 'number' && Number.isFinite(value)) out[key] = value;
+    }
+    return out;
+  } catch {
+    return {}; // corrupt or unavailable — fall back to shipped defaults
   }
 }
 

@@ -9,7 +9,7 @@
 
 import type { JobSite } from '../sim/job/JobSite';
 import { DEFAULT_TUNING, TUNING } from '../sim/tuning';
-import type { BladeSpec, VehicleDefinition } from '../sim/vehicle/types';
+import type { BladeSpec, CraneSpec, VehicleDefinition } from '../sim/vehicle/types';
 
 export interface SettingDef {
   id: string;
@@ -44,9 +44,25 @@ function bladeOf(def: VehicleDefinition): BladeSpec | undefined {
   return def.implements.find((i): i is BladeSpec => i.kind === 'blade');
 }
 
+function craneOf(def: VehicleDefinition): CraneSpec | undefined {
+  return def.implements.find((i): i is CraneSpec => i.kind === 'crane');
+}
+
 export function buildSettings(def: VehicleDefinition, site?: JobSite): SettingGroup[] {
   const loco = def.locomotion;
   const blade = bladeOf(def);
+  const crane = craneOf(def);
+
+  /**
+   * Namespace a setting to the machine that owns it.
+   *
+   * Every machine has a "Top speed", and with bare ids they were the SAME
+   * saved value. Measured: a crawler crane rated at 1.6 m/s drove off the
+   * hardstand at 8.1 m/s and spun at 3.35 rad/s, because those were the
+   * numbers a bulldozer had been tuned to in an earlier session. Global feel
+   * constants stay unprefixed — those genuinely are one value for the world.
+   */
+  const own = (id: string): string => `${def.id}:${id}`;
 
   // Captured at first build, so "reset" restores what shipped rather than
   // whatever happened to be loaded from storage.
@@ -57,11 +73,11 @@ export function buildSettings(def: VehicleDefinition, site?: JobSite): SettingGr
     {
       title: 'Machine',
       settings: [
-        num('maxSpeed', 'Top speed', 1, 15, 0.1, 'm/s', loco, locoDefaults, 'maxSpeed'),
-        num('turnRate', 'Turn rate', 0.2, 4, 0.05, 'rad/s', loco, locoDefaults, 'turnRate'),
-        adv(num('maxReverseSpeed', 'Reverse speed', 0.5, 10, 0.1, 'm/s', loco, locoDefaults, 'maxReverseSpeed')),
-        adv(num('acceleration', 'Acceleration', 0.5, 20, 0.1, 'm/s²', loco, locoDefaults, 'acceleration')),
-        adv(num('braking', 'Braking', 0.5, 25, 0.1, 'm/s²', loco, locoDefaults, 'braking')),
+        num(own('maxSpeed'), 'Top speed', 1, 15, 0.1, 'm/s', loco, locoDefaults, 'maxSpeed'),
+        num(own('turnRate'), 'Turn rate', 0.2, 4, 0.05, 'rad/s', loco, locoDefaults, 'turnRate'),
+        adv(num(own('maxReverseSpeed'), 'Reverse speed', 0.5, 10, 0.1, 'm/s', loco, locoDefaults, 'maxReverseSpeed')),
+        adv(num(own('acceleration'), 'Acceleration', 0.5, 20, 0.1, 'm/s²', loco, locoDefaults, 'acceleration')),
+        adv(num(own('braking'), 'Braking', 0.5, 25, 0.1, 'm/s²', loco, locoDefaults, 'braking')),
       ],
     },
   ];
@@ -70,12 +86,12 @@ export function buildSettings(def: VehicleDefinition, site?: JobSite): SettingGr
     groups.push({
       title: 'Blade',
       settings: [
-        num('bladeCapacity', 'Capacity', 0.5, 12, 0.1, 'm³', blade, bladeDefaults, 'capacity', 'How much it holds before soil rolls off the ends'),
-        num('bladeMoveSpeed', 'Lift speed', 0.2, 4, 0.05, 'm/s', blade, bladeDefaults, 'moveSpeed', 'How fast the blade answers R and F'),
-        num('bladeMinHeight', 'Max dig depth', -2, 0, 0.05, 'm', blade, bladeDefaults, 'minHeight', 'How far below the tracks the edge can reach'),
-        adv(num('bladeMaxHeight', 'Max lift', 0.2, 4, 0.05, 'm', blade, bladeDefaults, 'maxHeight')),
-        adv(num('bladeWidth', 'Width', 1, 8, 0.1, 'm', blade, bladeDefaults, 'width')),
-        adv(num('bladeReach', 'Reach', 1, 6, 0.1, 'm', blade, bladeDefaults, 'reach', 'Distance ahead of the machine')),
+        num(own('bladeCapacity'), 'Capacity', 0.5, 12, 0.1, 'm³', blade, bladeDefaults, 'capacity', 'How much it holds before soil rolls off the ends'),
+        num(own('bladeMoveSpeed'), 'Lift speed', 0.2, 4, 0.05, 'm/s', blade, bladeDefaults, 'moveSpeed', 'How fast the blade answers R and F'),
+        num(own('bladeMinHeight'), 'Max dig depth', -2, 0, 0.05, 'm', blade, bladeDefaults, 'minHeight', 'How far below the tracks the edge can reach'),
+        adv(num(own('bladeMaxHeight'), 'Max lift', 0.2, 4, 0.05, 'm', blade, bladeDefaults, 'maxHeight')),
+        adv(num(own('bladeWidth'), 'Width', 1, 8, 0.1, 'm', blade, bladeDefaults, 'width')),
+        adv(num(own('bladeReach'), 'Reach', 1, 6, 0.1, 'm', blade, bladeDefaults, 'reach', 'Distance ahead of the machine')),
       ],
     });
   }
@@ -86,9 +102,40 @@ export function buildSettings(def: VehicleDefinition, site?: JobSite): SettingGr
     groups.push({
       title: 'Blade pitch',
       settings: [
-        adv(num('pitchBack', 'Back limit', -0.6, 0, 0.01, 'rad', pitch, pitchDefaults, 'min', 'Rolled back: carries more, cuts gently')),
-        adv(num('pitchForward', 'Forward limit', 0, 0.6, 0.01, 'rad', pitch, pitchDefaults, 'max', 'Tipped forward: bites deeper, spills sooner')),
-        adv(num('pitchSpeed', 'Pitch speed', 0.05, 2, 0.05, 'rad/s', pitch, pitchDefaults, 'speed')),
+        adv(num(own('pitchBack'), 'Back limit', -0.6, 0, 0.01, 'rad', pitch, pitchDefaults, 'min', 'Rolled back: carries more, cuts gently')),
+        adv(num(own('pitchForward'), 'Forward limit', 0, 0.6, 0.01, 'rad', pitch, pitchDefaults, 'max', 'Tipped forward: bites deeper, spills sooner')),
+        adv(num(own('pitchSpeed'), 'Pitch speed', 0.05, 2, 0.05, 'rad/s', pitch, pitchDefaults, 'speed')),
+      ],
+    });
+  }
+
+  if (crane) {
+    const craneDefaults = { ...crane };
+    const slewDefaults = { ...crane.slew };
+    const turnDefaults = { ...crane.turn };
+    const luffDefaults = { ...crane.luff };
+    const hoistDefaults = { ...crane.hoist };
+
+    groups.push({
+      title: 'Crane',
+      settings: [
+        num(own('craneMaxLoad'), 'Rated load', 2, 40, 0.5, 't', crane, craneDefaults, 'maxLoad', 'What it lifts at minimum radius. Falls off as you reach out'),
+        num(own('craneMinRadius'), 'Full-chart radius', 2, 20, 0.5, 'm', crane, craneDefaults, 'minRadius', 'Reach past this and rated load starts dropping'),
+        num(own('craneSlewSpeed'), 'Slew speed', 0.05, 1.5, 0.01, 'rad/s', crane.slew, slewDefaults, 'speed', 'Faster slew, wilder swing'),
+        num(own('craneHoistSpeed'), 'Hoist speed', 0.5, 8, 0.1, 'm/s', crane.hoist, hoistDefaults, 'speed'),
+        adv(num(own('craneLuffSpeed'), 'Boom speed', 0.05, 1, 0.01, 'rad/s', crane.luff, luffDefaults, 'speed')),
+        adv(num(own('craneBoomLength'), 'Boom length', 8, 60, 1, 'm', crane, craneDefaults, 'boomLength', 'Takes effect on reload — the lattice is built once')),
+        adv(num(own('craneHookRadius'), 'Hook catch', 0.5, 5, 0.1, 'm', crane, craneDefaults, 'hookRadius', 'How near the lug the hook must be to take hold')),
+        adv(num(own('craneMaxRope'), 'Rope out', 5, 40, 0.5, 'm', crane.hoist, hoistDefaults, 'max')),
+      ],
+    });
+
+    groups.push({
+      title: 'Load swing',
+      settings: [
+        num('swayDamping', 'Sway damping', 0.02, 1, 0.01, '', TUNING, DEFAULT_TUNING, 'swayDamping', 'How fast a swinging load settles. Low is realistic and cruel'),
+        adv(num('maxSwingFraction', 'Swing limit', 0.1, 0.9, 0.05, '', TUNING, DEFAULT_TUNING, 'maxSwingFraction', 'Furthest the hook may swing, as a share of rope out')),
+        adv(num(own('craneTurnSpeed'), 'Tag line speed', 0.05, 3, 0.05, 'rad/s', crane.turn, turnDefaults, 'speed', 'How fast Z and X turn the load on the hook')),
       ],
     });
   }
@@ -100,24 +147,28 @@ export function buildSettings(def: VehicleDefinition, site?: JobSite): SettingGr
     groups.push({
       title: 'Contract',
       settings: [
-        num('jobTolerance', 'Grade tolerance', 0.05, 1, 0.01, 'm', site, siteDefaults, 'tolerance', 'How close to target counts as done. Repaints the overlay'),
-        num('jobRequiredAccuracy', 'Required accuracy', 0.5, 1, 0.01, '', site, siteDefaults, 'requiredAccuracy', 'Share of the site that must be on grade to finish'),
-        num('jobParSeconds', 'Par time', 30, 900, 10, 's', site, siteDefaults, 'parSeconds', 'Finish inside this to beat the contract'),
+        num(`${site.id}:jobTolerance`, 'Grade tolerance', 0.05, 1, 0.01, 'm', site, siteDefaults, 'tolerance', 'How close to target counts as done. Repaints the overlay'),
+        num(`${site.id}:jobRequiredAccuracy`, 'Required accuracy', 0.5, 1, 0.01, '', site, siteDefaults, 'requiredAccuracy', 'Share of the site that must be on grade to finish'),
+        num(`${site.id}:jobParSeconds`, 'Par time', 30, 900, 10, 's', site, siteDefaults, 'parSeconds', 'Finish inside this to beat the contract'),
       ],
     });
   }
 
-  groups.push({
-    title: 'Soil',
-    settings: [
-      adv(num('fullBladeResistance', 'Full-blade drag', 0, 0.95, 0.01, '', TUNING, DEFAULT_TUNING, 'fullBladeResistance', 'How much a loaded blade slows the machine. Lower = stronger')),
-      adv(num('stallFill', 'Stall point', 1.2, 5, 0.1, '×', TUNING, DEFAULT_TUNING, 'stallFill', 'Blade loads before the machine bogs down. Lower = gets stuck sooner')),
-      adv(num('rockResistance', 'Rock drag', 0, 0.98, 0.01, '', TUNING, DEFAULT_TUNING, 'rockResistance', 'How hard rock stops you')),
-      adv(num('sideSpillFraction', 'Side spill', 0, 0.9, 0.01, '', TUNING, DEFAULT_TUNING, 'sideSpillFraction', 'Share of an overloaded cut that rolls off the ends')),
-      adv(num('slumpPasses', 'Slump passes', 1, 8, 1, '', TUNING, DEFAULT_TUNING, 'slumpPasses', 'Higher settles piles faster and costs more CPU')),
-      adv(num('slumpRelaxation', 'Slump strength', 0.05, 1, 0.05, '', TUNING, DEFAULT_TUNING, 'slumpRelaxation')),
-    ],
-  });
+  // Only where something can actually move soil. On the lift yard every one of
+  // these is a slider with no observable effect, which is worse than absent.
+  if (blade) {
+    groups.push({
+      title: 'Soil',
+      settings: [
+        adv(num('fullBladeResistance', 'Full-blade drag', 0, 0.95, 0.01, '', TUNING, DEFAULT_TUNING, 'fullBladeResistance', 'How much a loaded blade slows the machine. Lower = stronger')),
+        adv(num('stallFill', 'Stall point', 1.2, 5, 0.1, '×', TUNING, DEFAULT_TUNING, 'stallFill', 'Blade loads before the machine bogs down. Lower = gets stuck sooner')),
+        adv(num('rockResistance', 'Rock drag', 0, 0.98, 0.01, '', TUNING, DEFAULT_TUNING, 'rockResistance', 'How hard rock stops you')),
+        adv(num('sideSpillFraction', 'Side spill', 0, 0.9, 0.01, '', TUNING, DEFAULT_TUNING, 'sideSpillFraction', 'Share of an overloaded cut that rolls off the ends')),
+        adv(num('slumpPasses', 'Slump passes', 1, 8, 1, '', TUNING, DEFAULT_TUNING, 'slumpPasses', 'Higher settles piles faster and costs more CPU')),
+        adv(num('slumpRelaxation', 'Slump strength', 0.05, 1, 0.05, '', TUNING, DEFAULT_TUNING, 'slumpRelaxation')),
+      ],
+    });
+  }
 
   return groups;
 }

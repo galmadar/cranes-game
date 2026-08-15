@@ -10,6 +10,8 @@ import { relaxSlump } from './deform/slump';
 import { EMPTY_ACTION_STATE, type ActionState } from './input/actions';
 import type { JobRunner } from './job/JobRunner';
 import { targetAtWorld } from './job/JobSite';
+import type { LiftRunner } from './payload/LiftJob';
+import type { Payload } from './payload/Payload';
 import type { Rect, Terrain } from './Terrain';
 import { TUNING } from './tuning';
 import type { Vehicle } from './vehicle/Vehicle';
@@ -31,6 +33,16 @@ export class World {
   readonly vehicles: Vehicle[] = [];
 
   /**
+   * Loose loads. The world's second kind of thing.
+   *
+   * Everything before this was a height field, and a height field has no
+   * identity: soil that moves is soil somewhere else. A load is the same load
+   * wherever it ends up, which is what makes "put THAT there" a goal the game
+   * can set and score.
+   */
+  readonly payloads: Payload[] = [];
+
+  /**
    * Ground that has been disturbed and has not yet reached its repose angle.
    *
    * Relaxation used to run only where a machine was standing, so a cut face
@@ -42,8 +54,10 @@ export class World {
    */
   private readonly settling = new Set<number>();
 
-  /** The active contract, if any. Null means free roam. */
+  /** The active grading contract, if any. Null means free roam. */
   job: JobRunner | null = null;
+  /** The active lift contract, if any. A map has one or the other, not both. */
+  lift: LiftRunner | null = null;
 
   private activeIndex = 0;
   private elapsedSeconds = 0;
@@ -70,6 +84,13 @@ export class World {
     return vehicle;
   }
 
+  /** Loads arrive standing on the ground, wherever the map said to put them. */
+  addPayload(payload: Payload): Payload {
+    payload.settleOnGround(this.terrain);
+    this.payloads.push(payload);
+    return payload;
+  }
+
   /** FR-2.6 groundwork: the shell will drive this from a selection screen. */
   setActiveVehicle(index: number): void {
     if (index >= 0 && index < this.vehicles.length) this.activeIndex = index;
@@ -83,14 +104,21 @@ export class World {
    * conforming to terrain that may have moved beneath them.
    */
   step(dt: number, input: ActionState = EMPTY_ACTION_STATE): void {
+    let dropped = 0;
     for (const vehicle of this.vehicles) {
       vehicle.update(
         dt,
         vehicle === this.activeVehicle ? input : EMPTY_ACTION_STATE,
         this.terrain,
         this.gradeAt,
+        this.payloads,
       );
+      dropped += vehicle.consumeDroppedLoads();
     }
+
+    // After the machines, so a load released this step starts falling from
+    // where the hook actually left it rather than from a step-old position.
+    for (const payload of this.payloads) payload.step(dt, this.terrain);
 
     // FR-3.6 — settle everything that moved, after every machine has had its
     // turn, so overlapping edits relax together instead of fighting.
@@ -106,6 +134,7 @@ export class World {
     // Score after settling, so the job is measured against ground that has
     // finished moving rather than mid-collapse.
     if (this.job) this.job.step(dt, this.terrain, this.cutVolumeThisStep(dt));
+    if (this.lift) this.lift.step(dt, this.payloads, dropped);
 
     this.elapsedSeconds += dt;
     this.stepCount++;

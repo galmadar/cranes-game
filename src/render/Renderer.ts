@@ -11,6 +11,7 @@ import type { World } from '../sim/World';
 import { ChaseCamera } from './ChaseCamera';
 import { DustSystem } from './DustSystem';
 import { GradePlane } from './GradePlane';
+import { LiftTargetView, PayloadView } from './PayloadView';
 import { PostFX } from './PostFX';
 import { SkyDome } from './SkyDome';
 import { TerrainMesh } from './TerrainMesh';
@@ -29,6 +30,8 @@ export class Renderer {
   private readonly sun: THREE.DirectionalLight;
   private readonly sky: SkyDome;
   private readonly dust: DustSystem;
+  private readonly payloads: PayloadView;
+  private readonly liftTargets: LiftTargetView | null;
   private gradePlane: GradePlane | null = null;
   private postFx: PostFX | null = null;
   private readonly container: HTMLElement;
@@ -81,6 +84,16 @@ export class Renderer {
     this.dust = new DustSystem();
     this.scene.add(this.dust.object);
 
+    this.payloads = new PayloadView(world.payloads);
+    this.scene.add(this.payloads.object);
+
+    // Built once from the contract's targets: pads do not move, only their
+    // beacons go out as the loads land on them.
+    this.liftTargets = world.lift
+      ? new LiftTargetView(world.terrain, world.lift.targets)
+      : null;
+    if (this.liftTargets) this.scene.add(this.liftTargets.object);
+
     world.vehicles.forEach((vehicle, index) => {
       const entry = getVehicle(vehicle.def.id);
       const view = new VehicleView(vehicle.def, entry.view);
@@ -89,7 +102,15 @@ export class Renderer {
       this.scene.add(view.object);
     });
 
-    this.chase = new ChaseCamera(this.renderer.domElement);
+    // Framed for whatever is being driven. The active machine's entry owns the
+    // numbers, so a new machine brings its own camera rather than inheriting
+    // the one the dozer was tuned with.
+    const active = world.activeVehicle;
+    this.chase = new ChaseCamera(
+      this.renderer.domElement,
+      1,
+      active ? getVehicle(active.def.id).camera : undefined,
+    );
 
     this.postFx = new PostFX(
       this.renderer,
@@ -109,6 +130,7 @@ export class Renderer {
     const enabled = !this.terrainMesh.isOverlayEnabled;
     this.terrainMesh.setOverlayEnabled(enabled);
     this.gradePlane?.setVisible(enabled);
+    this.liftTargets?.setVisible(enabled);
 
     const bounds = world.job?.site.bounds;
     if (bounds) world.terrain.markDirty(bounds.x0, bounds.z0, bounds.x1, bounds.z1);
@@ -139,6 +161,9 @@ export class Renderer {
     world.vehicles.forEach((vehicle, index) => {
       this.vehicleViews.get(index)?.sync(vehicle.state);
     });
+
+    this.payloads.sync(world.payloads);
+    if (world.lift) this.liftTargets?.sync(world.lift.current);
 
     // Keep the shadow frustum tight around the action rather than the whole
     // 128m yard — a fixed map-wide frustum would waste the entire shadow map.
@@ -212,6 +237,8 @@ export class Renderer {
     this.terrainMesh.dispose();
     this.sky.dispose();
     this.dust.dispose();
+    this.payloads.dispose();
+    this.liftTargets?.dispose();
     this.gradePlane?.dispose();
     this.postFx?.dispose();
     this.vehicleViews.forEach((v) => v.dispose());
