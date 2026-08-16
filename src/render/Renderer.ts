@@ -183,11 +183,23 @@ export class Renderer {
   render(world: World, frameDt: number, _alpha: number): void {
     const active = world.activeVehicle;
     if (active) {
-      this.chase.update(frameDt, active.state.position, active.state.heading, (x, z) =>
-        world.terrain.sampleHeight(x, z),
+      const implementStates = Object.values(active.state.implementStates);
+      const crane = implementStates.find((s) => s.kind === 'crane');
+      const arm = implementStates.find((s) => s.kind === 'excavator');
+
+      // A slewing machine faces where its HOUSE faces, and works at the end of
+      // whatever hangs off it. Following the tracks meant swinging round to the
+      // work left the camera staring at the back of the crawlers.
+      const facing = active.state.heading + (crane?.slew ?? arm?.slew ?? 0);
+      this.chase.update(
+        frameDt,
+        active.state.position,
+        facing,
+        (x, z) => world.terrain.sampleHeight(x, z),
+        crane?.hook ?? arm?.teeth ?? null,
       );
 
-      const blade = Object.values(active.state.implementStates).find((s) => s.kind === 'blade');
+      const blade = implementStates.find((s) => s.kind === 'blade');
       const pos = active.state.position;
       this.dust.update(
         frameDt,

@@ -20,7 +20,7 @@ import { fbm, makeValueNoise2D } from '../../sim/math/noise';
 import { lerp, smoothstep, vec3 } from '../../sim/math/Vec';
 import type { LiftTarget } from '../../sim/payload/LiftJob';
 import type { PayloadInit } from '../../sim/payload/Payload';
-import type { MapDefinition } from './types';
+import type { LiftContract, MapDefinition } from './types';
 
 const WIDTH = 256;
 const DEPTH = 256;
@@ -162,6 +162,112 @@ const TARGETS: readonly LiftTarget[] = [
   },
 ];
 
+/**
+ * Second contract — the chart stops being advice and starts being a wall.
+ *
+ * The first job teaches the controls: four loads, none heavier than 7.2 t, all
+ * liftable somewhere sensible. This one is about the one number a crane
+ * operator actually plans around. The transformer is 10.5 t, so it comes off
+ * the ground only inside 6.9 m — barely past the machine's own tail — and it
+ * has to travel the length of the yard on the hook. There is no stance that
+ * lifts it and no stance that sets it down; you carry it.
+ *
+ * Everything runs east to west, opposite to the first job, so the yard reads
+ * differently rather than reading as the same contract with new numbers. The
+ * stack sits square in the middle of that line.
+ */
+const SECOND_PAYLOADS: readonly PayloadInit[] = [
+  {
+    id: 'transformer',
+    kind: 'crate',
+    displayName: 'Transformer',
+    size: { x: 2.8, y: 2.6, z: 3.2 },
+    mass: 10.5,
+    x: 17,
+    z: -6,
+    yaw: 0,
+  },
+  {
+    id: 'pipe-b',
+    kind: 'pipe',
+    displayName: 'Culvert pipe',
+    size: { x: 1.5, y: 1.5, z: 7 },
+    mass: 6,
+    x: 17,
+    z: 2,
+    yaw: 0,
+  },
+  {
+    id: 'pipe-c',
+    kind: 'pipe',
+    displayName: 'Culvert pipe',
+    size: { x: 1.5, y: 1.5, z: 7 },
+    mass: 6,
+    x: 17,
+    z: 7,
+    yaw: 0,
+  },
+];
+
+const SECOND_TARGETS: readonly LiftTarget[] = [
+  {
+    id: 'pad-transformer',
+    label: 'Transformer plinth',
+    x: -18,
+    z: -6,
+    radius: 1.2,
+    yaw: 0,
+    yawTolerance: deg(20),
+    accepts: 'crate',
+  },
+  // Tighter than the first job's culvert, and laid across the run rather than
+  // along it: the tag line is the only control that can finish these.
+  {
+    id: 'pad-pipe-north',
+    label: 'Culvert run, north',
+    x: -17,
+    z: 2,
+    radius: 1.3,
+    yaw: deg(90),
+    yawTolerance: deg(8),
+    accepts: 'pipe',
+  },
+  {
+    id: 'pad-pipe-south',
+    label: 'Culvert run, south',
+    x: -17,
+    z: 7,
+    radius: 1.3,
+    yaw: deg(90),
+    yawTolerance: deg(8),
+    accepts: 'pipe',
+  },
+];
+
+const CONTRACTS: readonly LiftContract[] = [
+  {
+    id: 'foundations',
+    title: 'Set the foundations',
+    brief:
+      'Hook (Space) under a load, hoist (T), slew (Q/E) and set it on its pad. ' +
+      'Watch the load chart — boom up (R) to lift more.',
+    parSeconds: 420,
+    payloads: PAYLOADS,
+    targets: TARGETS,
+  },
+  {
+    id: 'transformer',
+    title: 'Land the transformer',
+    brief:
+      'The transformer is 10.5 t — it only comes up inside 7 m, and it will not ' +
+      'go down again anywhere else. Pick it up, then drive it across with the ' +
+      'load on the hook. Pipes lie ACROSS their run: turn them with Z and X.',
+    parSeconds: 480,
+    payloads: SECOND_PAYLOADS,
+    targets: SECOND_TARGETS,
+  },
+];
+
 export const liftYardMap: MapDefinition = {
   id: 'liftYard',
   displayName: 'Lift Yard',
@@ -177,15 +283,7 @@ export const liftYardMap: MapDefinition = {
   spawn: { position: vec3(0, 0, -22), heading: 0 },
   defaultVehicleId: 'crawlerCrane',
 
-  populate: () => ({ payloads: PAYLOADS, liftTargets: TARGETS }),
-
-  liftBrief: {
-    title: 'Set the foundations',
-    brief:
-      'Hook (Space) under a load, hoist (T), slew (Q/E) and set it on its pad. ' +
-      'Watch the load chart — boom up (R) to lift more.',
-    parSeconds: 420,
-  },
+  liftContracts: CONTRACTS,
 
   generate() {
     const count = WIDTH * DEPTH;

@@ -27,7 +27,7 @@ import { GameLoop } from './shell/GameLoop';
 import { Hud, type MachineRow } from './shell/Hud';
 import { JobHud } from './shell/JobHud';
 import { LiftHud } from './shell/LiftHud';
-import { bladeRows, craneRows } from './shell/readouts';
+import { bladeRows, craneRows, excavatorRows } from './shell/readouts';
 import { SettingsPanel } from './shell/SettingsPanel';
 import { buildSettings } from './shell/settingsSchema';
 
@@ -42,7 +42,12 @@ const terrain = new Terrain(map.width, map.depth, map.cellSize, map.generate());
 const world = new World(terrain);
 
 const site = map.createJob?.(terrain);
-const populated = map.populate?.();
+
+// A site can offer several contracts. `?job=` picks one; otherwise you get the
+// first, which is the one written to be attempted first.
+const contracts = map.liftContracts ?? [];
+const wantedJob = params.get('job');
+const contract = contracts.find((c) => c.id === wantedJob) ?? contracts[0];
 
 // Built before the machine so saved tuning is applied to the vehicle
 // definition and the contract before anything reads them.
@@ -52,11 +57,9 @@ const vehicle = world.addVehicle(new Vehicle(entry.def, site?.spawn ?? map.spawn
 
 if (site) world.job = new JobRunner(terrain, site);
 
-if (populated) {
-  for (const init of populated.payloads) world.addPayload(new Payload(init));
-  if (map.liftBrief) {
-    world.lift = new LiftRunner({ targets: populated.liftTargets, ...map.liftBrief });
-  }
+if (contract) {
+  for (const init of contract.payloads) world.addPayload(new Payload(init));
+  world.lift = new LiftRunner(contract);
 }
 
 const keyboard = new Keyboard();
@@ -87,6 +90,17 @@ function cycleMap(): void {
   window.location.search = `?map=${next.id}`;
 }
 
+/** Move to the next contract on this site. Same reload, same reasoning. */
+function cycleContract(): void {
+  if (contracts.length < 2 || !contract) return;
+  const index = contracts.findIndex((c) => c.id === contract.id);
+  const next = contracts[(index + 1) % contracts.length];
+  window.location.search = `?map=${map.id}&job=${next.id}`;
+}
+
+/** Every key the machine on screen has claimed. The shell keeps off these. */
+const vehicleKeys = new Set(Object.values(entry.def.keymap).flat());
+
 window.addEventListener('keydown', (e) => {
   const typing =
     e.target instanceof HTMLElement &&
@@ -108,11 +122,18 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (typing) return;
+  // The machine's keymap wins (FR-4.1). The shell's shortcuts are conveniences
+  // bolted on around whatever is being driven, and when the excavator bound
+  // its bucket curl to C and V — the obvious keys — tipping a load out also
+  // flipped the camera. A vehicle that claims a key owns it.
+  if (vehicleKeys.has(e.code)) return;
+
   if (e.code === 'KeyC') renderer.chase.recenter();
   if (e.code === 'KeyV') renderer.chase.cycleMode();
   if (e.code === 'KeyG') renderer.toggleJobOverlay(world);
   if (e.code === 'KeyP') renderer.togglePostFx();
   if (e.code === 'KeyN') cycleMap();
+  if (e.code === 'KeyJ') cycleContract();
 });
 
 // Volume is an O(cells) scan. It only needs to be readable, not per-frame
@@ -164,6 +185,16 @@ function machineReadout(): MachineRow[] {
   const rows: MachineRow[] = [];
   for (const state of Object.values(vehicle.state.implementStates)) {
     if (state.kind === 'blade') rows.push(...bladeRows(state, gradeUnderBlade()));
+    if (state.kind === 'excavator') {
+      const spec = entry.def.implements.find((i) => i.kind === 'excavator');
+      rows.push(
+        ...excavatorRows(
+          state,
+          spec?.kind === 'excavator' ? spec.capacity : 1,
+          targetUnder(state.teeth.x, state.teeth.z),
+        ),
+      );
+    }
     if (state.kind === 'crane') {
       const held = world.payloads.find((p) => p.id === state.hookedPayloadId);
       rows.push(
@@ -178,19 +209,23 @@ function machineReadout(): MachineRow[] {
   return rows;
 }
 
-/** How far the ground at the blade sits above (+) or below (-) target grade. */
-function gradeUnderBlade(): number | null {
+/** Design elevation at a world point, or null where the contract says nothing. */
+function targetUnder(x: number, z: number): number | null {
   const job = world.job;
   if (!job) return null;
+  return targetAt(
+    job.site,
+    Math.round(terrain.worldToCellX(x)),
+    Math.round(terrain.worldToCellZ(z)),
+  );
+}
 
+/** How far the ground at the blade sits above (+) or below (-) target grade. */
+function gradeUnderBlade(): number | null {
   const s = vehicle.state;
   const bx = s.position.x + Math.sin(s.heading) * 3;
   const bz = s.position.z + Math.cos(s.heading) * 3;
-  const target = targetAt(
-    job.site,
-    Math.round(terrain.worldToCellX(bx)),
-    Math.round(terrain.worldToCellZ(bz)),
-  );
+  const target = targetUnder(bx, bz);
   return target === null ? null : terrain.sampleHeight(bx, bz) - target;
 }
 

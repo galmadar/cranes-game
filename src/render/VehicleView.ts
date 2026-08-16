@@ -24,6 +24,18 @@ export interface VehicleParts {
   /** Rope, hanging from its own origin down -Y at unit length. */
   craneRope?: THREE.Object3D;
   craneHook?: THREE.Object3D;
+
+  /**
+   * Excavator arm, as a nested chain: house > boom > stick > bucket.
+   *
+   * Each is parented at the joint above it, so posing the arm is four
+   * rotations and no trigonometry — and the teeth on screen land where the
+   * simulation's teeth are, because both compose the same angles the same way.
+   */
+  armHouse?: THREE.Object3D;
+  armBoom?: THREE.Object3D;
+  armStick?: THREE.Object3D;
+  armBucket?: THREE.Object3D;
 }
 
 export type VehicleViewFactory = (def: VehicleDefinition) => VehicleParts;
@@ -44,6 +56,11 @@ export class VehicleView {
   private readonly craneRope: THREE.Object3D | undefined;
   private readonly craneHook: THREE.Object3D | undefined;
 
+  private readonly armHouse: THREE.Object3D | undefined;
+  private readonly armBoom: THREE.Object3D | undefined;
+  private readonly armStick: THREE.Object3D | undefined;
+  private readonly armBucket: THREE.Object3D | undefined;
+
   private readonly headWorld = new THREE.Vector3();
   private readonly hookWorld = new THREE.Vector3();
   private readonly ropeVector = new THREE.Vector3();
@@ -61,6 +78,11 @@ export class VehicleView {
     this.craneHead = parts.craneHead;
     this.craneRope = parts.craneRope;
     this.craneHook = parts.craneHook;
+
+    this.armHouse = parts.armHouse;
+    this.armBoom = parts.armBoom;
+    this.armStick = parts.armStick;
+    this.armBucket = parts.armBucket;
   }
 
   sync(state: VehicleState): void {
@@ -81,6 +103,18 @@ export class VehicleView {
 
     const craneState = implementStates.find((s) => s.kind === 'crane');
     if (craneState) this.syncCrane(craneState.slew, craneState.luff, craneState.hook, craneState.head);
+
+    const armState = implementStates.find((s) => s.kind === 'excavator');
+    if (armState) {
+      // Negative on the X rotations for the same reason as the crane's boom: a
+      // rotation about +X swings +Z downward, and these angles measure UP.
+      if (this.armHouse) this.armHouse.rotation.y = armState.slew;
+      if (this.armBoom) this.armBoom.rotation.x = -armState.boom;
+      // Each link is parented to the one above, so its rotation is the joint
+      // angle itself — exactly the relative angles the simulation composes.
+      if (this.armStick) this.armStick.rotation.x = armState.stick;
+      if (this.armBucket) this.armBucket.rotation.x = armState.curl;
+    }
   }
 
   /**

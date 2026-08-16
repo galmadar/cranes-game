@@ -12,6 +12,7 @@ import type { Payload } from '../payload/Payload';
 import type { Rect, Terrain } from '../Terrain';
 import { BladeImplement } from './implements/BladeImplement';
 import { CraneImplement } from './implements/CraneImplement';
+import { ExcavatorImplement } from './implements/ExcavatorImplement';
 import {
   NO_GRADE,
   type GradeQuery,
@@ -55,6 +56,8 @@ function buildImplement(spec: ImplementSpec): Implement {
       return new BladeImplement(spec);
     case 'crane':
       return new CraneImplement(spec);
+    case 'excavator':
+      return new ExcavatorImplement(spec);
     default: {
       // Exhaustiveness guard: adding an implement kind without a factory is a
       // compile error, not a silent no-op at runtime.

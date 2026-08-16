@@ -10,7 +10,7 @@
  * nothing about whether you are about to be refused a lift.
  */
 
-import type { BladeState, CraneState } from '../sim/vehicle/types';
+import type { BladeState, CraneState, ExcavatorState } from '../sim/vehicle/types';
 import type { MachineRow } from './Hud';
 
 const degrees = (radians: number): number => (radians * 180) / Math.PI;
@@ -96,4 +96,48 @@ export function craneRows(
     rows.push({ label: 'Load bearing', value: `${bearing.toFixed(0)}°` });
   }
   return rows;
+}
+
+export function excavatorRows(
+  state: ExcavatorState,
+  /** Capacity in m³, so the bucket reads as a fraction rather than a number. */
+  capacity: number,
+  /** Design elevation under the teeth, or null off the job. */
+  targetAtTeeth: number | null,
+): MachineRow[] {
+  // Depth relative to the GROUND, not to the machine: "how deep am I in" is
+  // the question an excavator operator is actually asking, and the answer
+  // changes as the hole gets deeper under an arm that has not moved.
+  const depth = state.groundAtTeeth - state.teeth.y;
+
+  let cut = 'off site';
+  if (targetAtTeeth !== null) {
+    const over = state.teeth.y - targetAtTeeth;
+    cut =
+      Math.abs(over) < 0.15
+        ? 'on grade'
+        : over > 0
+          ? `${over.toFixed(2)} m to go`
+          : `${(-over).toFixed(2)} m too deep`;
+  }
+
+  return [
+    {
+      label: 'Teeth',
+      value: depth > 0.02 ? `${depth.toFixed(2)} m down` : `${(-depth).toFixed(2)} m clear`,
+    },
+    { label: 'At teeth', value: cut, alert: targetAtTeeth !== null && state.teeth.y < targetAtTeeth - 0.15 },
+    { label: 'Radius', value: `${state.radius.toFixed(1)} m` },
+    {
+      // Against capacity, and flagged the moment it is full: a bucket that
+      // stopped filling with no cue reads as a machine that stopped digging.
+      label: 'Bucket',
+      value:
+        `${state.carried.toFixed(2)} / ${capacity.toFixed(1)} m³` +
+        (state.carried >= capacity - 1e-3 ? '  FULL' : '') +
+        (state.blocked ? '  ⛔ rock' : ''),
+      alert: state.blocked,
+    },
+    { label: 'Curl', value: state.dumping ? 'open · tipping out' : 'closed · holding' },
+  ];
 }

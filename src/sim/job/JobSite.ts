@@ -152,6 +152,62 @@ export function createFlatPad(terrain: Terrain, options: FlatPadOptions): JobSit
   };
 }
 
+export interface ShapedSiteOptions {
+  id: string;
+  title: string;
+  brief: string;
+  centerX: number;
+  centerZ: number;
+  width: number;
+  depth: number;
+  tolerance: number;
+  requiredAccuracy: number;
+  parSeconds: number;
+  spawn?: { position: Vec3; heading: number };
+  /**
+   * Target elevation at a world point, given the ground there now.
+   *
+   * The second argument is what makes a TRENCH expressible: a trench is not an
+   * elevation, it is "the ground you already have, minus a metre and a half
+   * along this line". Handing the shape function the existing height lets a
+   * contract describe a change rather than a plane, and the scoring, the
+   * overlay and the grade plane all work off it unchanged.
+   */
+  shape(x: number, z: number, ground: number): number;
+}
+
+/** A job site whose target is any surface you can write as a function. */
+export function createShapedSite(terrain: Terrain, options: ShapedSiteOptions): JobSite {
+  const bounds = worldRectToCells(terrain, options);
+  const w = bounds.x1 - bounds.x0 + 1;
+  const d = bounds.z1 - bounds.z0 + 1;
+
+  const target = new Float32Array(w * d);
+  for (let iz = 0; iz < d; iz++) {
+    for (let ix = 0; ix < w; ix++) {
+      const cx = bounds.x0 + ix;
+      const cz = bounds.z0 + iz;
+      target[iz * w + ix] = options.shape(
+        terrain.cellToWorldX(cx),
+        terrain.cellToWorldZ(cz),
+        terrain.getHeight(cx, cz),
+      );
+    }
+  }
+
+  return {
+    id: options.id,
+    title: options.title,
+    brief: options.brief,
+    bounds,
+    target,
+    tolerance: options.tolerance,
+    requiredAccuracy: options.requiredAccuracy,
+    parSeconds: options.parSeconds,
+    ...(options.spawn ? { spawn: options.spawn } : {}),
+  };
+}
+
 function worldRectToCells(
   terrain: Terrain,
   o: { centerX: number; centerZ: number; width: number; depth: number },

@@ -145,6 +145,24 @@ export class World {
     return this.settling.size;
   }
 
+  /**
+   * Soil currently held in buckets, m³.
+   *
+   * FR-3.5 used to be checkable against the height field alone, because nothing
+   * could hold soil — a blade's load is measured off the terrain it is pushing,
+   * so it was never missing from the world. An excavator genuinely removes
+   * soil and carries it, so the invariant is now `terrain.totalVolume() + this`.
+   */
+  get carriedVolume(): number {
+    let total = 0;
+    for (const vehicle of this.vehicles) {
+      for (const state of Object.values(vehicle.state.implementStates)) {
+        if (state.kind === 'excavator') total += state.carried;
+      }
+    }
+    return total;
+  }
+
   private get tilesX(): number {
     return Math.ceil(this.terrain.width / SETTLE_TILE);
   }

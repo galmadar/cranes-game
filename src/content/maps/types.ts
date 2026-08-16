@@ -37,9 +37,22 @@ export interface MapDefinition {
   /** The grading contract this site sets, if it sets one. */
   createJob?(terrain: Terrain): JobSite;
 
-  /** The loads standing on the site, and the pads they belong on. */
-  populate?(): { payloads: readonly PayloadInit[]; liftTargets: readonly LiftTarget[] };
+  /**
+   * Lift contracts this site offers, in the order they should be attempted.
+   *
+   * A list rather than one job, because a yard is a place and a contract is a
+   * piece of work done in it — the loads and the pads move, the hardstand does
+   * not. Same reasoning as the vehicle registry: adding one is an entry here.
+   */
+  readonly liftContracts?: readonly LiftContract[];
+}
 
-  /** Objective text for a lift contract. Ignored where `populate` is absent. */
-  readonly liftBrief?: { title: string; brief: string; parSeconds: number };
+/** One lift job: what is on the ground, where it has to end up, and by when. */
+export interface LiftContract {
+  readonly id: string;
+  readonly title: string;
+  readonly brief: string;
+  readonly parSeconds: number;
+  readonly payloads: readonly PayloadInit[];
+  readonly targets: readonly LiftTarget[];
 }

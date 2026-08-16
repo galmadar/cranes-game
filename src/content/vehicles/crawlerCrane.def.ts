@@ -39,15 +39,17 @@ export const crawlerCraneDef: VehicleDefinition = {
   // its stability, and the footprint is what the load moment works against.
   dimensions: { length: 7.4, width: 5.2, height: 3.4 },
 
-  // Slow. A crane travelling with a load on the hook that handles like a dozer
-  // would make sway a decoration rather than a problem.
+  // Slow, but not a punishment. A crane that handles like a dozer would make
+  // sway a decoration rather than a problem; at 1.6 m/s the repositioning
+  // between stances — which is the interesting decision — was mostly waiting.
+  // Played back at these numbers it still reads as heavy.
   locomotion: {
     kind: 'tracked',
-    maxSpeed: 1.6,
-    maxReverseSpeed: 1.3,
-    acceleration: 1.1,
-    braking: 2.4,
-    turnRate: 0.42,
+    maxSpeed: 2.7,
+    maxReverseSpeed: 2.1,
+    acceleration: 1.9,
+    braking: 3.4,
+    turnRate: 0.62,
   },
 
   implements: [

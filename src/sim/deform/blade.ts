@@ -22,6 +22,7 @@ import { materialOf, MaterialId } from '../materials';
 import { clamp } from '../math/Vec';
 import type { Rect, Terrain } from '../Terrain';
 import { TUNING } from '../tuning';
+import { fillLowestFirst, takeFromHighest } from './transfer';
 
 /**
  * Soil within this distance of the cutting edge counts as already cut, in metres.
@@ -170,57 +171,6 @@ function collectOrientedRect(
   return { cells, rect: { x0: rx0, z0: rz0, x1: rx1, z1: rz1 } };
 }
 
-/**
- * Pour `volume` into `cells`, filling the lowest first so soil settles into
- * hollows before it stacks. Returns how much actually landed — less than
- * requested only if there was nowhere to put it.
- */
-function fillLowestFirst(
-  terrain: Terrain,
-  cells: readonly number[],
-  volume: number,
-  paint: MaterialId | null,
-  /** Height nothing may be raised above. What does not fit is returned unplaced. */
-  ceiling = Infinity,
-): number {
-  if (cells.length === 0 || volume <= 0) return 0;
-
-  const height = terrain.height;
-  const area = terrain.cellArea;
-  const sorted = [...cells].sort((a, b) => height[a] - height[b]);
-
-  let remaining = volume;
-  let k = 1;
-  while (k <= sorted.length && remaining > 1e-12) {
-    const level = height[sorted[k - 1]];
-    if (level >= ceiling) break;
-    const nextLevel = Math.min(k < sorted.length ? height[sorted[k]] : Infinity, ceiling);
-    const roomToNext = (nextLevel - level) * k * area;
-
-    if (remaining <= roomToNext) {
-      const rise = remaining / (k * area);
-      for (let j = 0; j < k; j++) height[sorted[j]] += rise;
-      remaining = 0;
-    } else {
-      for (let j = 0; j < k; j++) height[sorted[j]] = nextLevel;
-      remaining -= roomToNext;
-      k++;
-    }
-  }
-
-  if (paint !== null) {
-    // Everything we raised takes on the material that was cut, so pushing sand
-    // across topsoil leaves a sand trail. Rock is never painted over.
-    for (let j = 0; j < k && j < sorted.length; j++) {
-      const cell = sorted[j];
-      if (!materialOf(terrain.material[cell]).diggable) continue;
-      terrain.material[cell] = paint;
-      terrain.disturbance[cell] = 255; // spoil is loose, freshly turned earth
-    }
-  }
-
-  return volume - remaining;
-}
 
 /** Pour into cells lowest-first, but never raise any of them above `level`. */
 function fillToLevel(
@@ -248,39 +198,6 @@ function fillToLevel(
   return placed;
 }
 
-/**
- * Take up to `wanted` m³ off the tallest cells, never cutting below `floor`.
- *
- * The mirror of `fillLowestFirst`, and the thing that makes GRADING possible.
- * Without it the blade can only ever cut and shove forward: a hollow stays a
- * hollow no matter how much soil is heaped in front of the machine, because
- * there is no mechanism for the load to come off the blade and go into the
- * low ground it is standing over.
- */
-function takeFromHighest(
-  terrain: Terrain,
-  cells: readonly number[],
-  wanted: number,
-  floor: number,
-): number {
-  if (cells.length === 0 || wanted <= 0) return 0;
-
-  const height = terrain.height;
-  const area = terrain.cellArea;
-  // Tallest first.
-  const sorted = [...cells].sort((a, b) => height[b] - height[a]);
-
-  let taken = 0;
-  for (const cell of sorted) {
-    if (taken >= wanted) break;
-    const available = (height[cell] - floor) * area;
-    if (available <= 0) continue;
-    const grab = Math.min(available, wanted - taken);
-    height[cell] -= grab / area;
-    taken += grab;
-  }
-  return taken;
-}
 
 /** Zone minus a set of cells. The bounding rect is kept (it only shrinks). */
 function excluding(zone: Zone, exclude: ReadonlySet<number>): Zone {

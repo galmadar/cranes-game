@@ -6,10 +6,11 @@
  */
 
 import { liftYardMap } from './liftYard';
+import { pipelineCutMap } from './pipelineCut';
 import { sandboxMap } from './sandbox';
 import type { MapDefinition } from './types';
 
-export const MAPS: readonly MapDefinition[] = [sandboxMap, liftYardMap];
+export const MAPS: readonly MapDefinition[] = [sandboxMap, liftYardMap, pipelineCutMap];
 
 export const DEFAULT_MAP_ID = sandboxMap.id;
 

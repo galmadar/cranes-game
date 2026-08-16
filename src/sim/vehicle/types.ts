@@ -179,7 +179,62 @@ export interface AxisSpec {
   speed: number;
 }
 
-export type ImplementSpec = BladeSpec | CraneSpec;
+/**
+ * Excavator arm — house, boom, stick, bucket.
+ *
+ * One implement for the same reason the crane is: the teeth are at the end of
+ * a chain, and where they are depends on every joint at once.
+ *
+ * The difference from the crane is what the end of the arm DOES. A hook takes
+ * hold of a thing that already exists; a bucket takes soil out of the world and
+ * carries it. That is why this spec has a capacity in cubic metres and the
+ * crane's has one in tonnes.
+ */
+export interface ExcavatorSpec {
+  kind: 'excavator';
+  id: string;
+
+  slew: { leftAction: ActionId; rightAction: ActionId; speed: number };
+  /** Boom, measured up from horizontal at its foot. */
+  boom: AxisSpec;
+  /** Stick, measured as the angle it closes on the boom. */
+  stick: AxisSpec;
+  /** Bucket curl. High curls the teeth in and holds; low tips the load out. */
+  curl: AxisSpec;
+
+  /** Boom foot, in the slewing house's frame. */
+  pivot: { y: number; z: number };
+  boomLength: number;
+  stickLength: number;
+  /** Teeth reach out from the stick's end, metres. */
+  bucketLength: number;
+  /** Width of the cut, metres. */
+  bucketWidth: number;
+
+  /** m³ the bucket holds. */
+  capacity: number;
+  /**
+   * m³ picked up per metre the teeth are DRAGGED through soil.
+   *
+   * Per metre rather than per second, and that is the difference between a
+   * machine and a button: soil only enters the bucket while the arm is moving
+   * through it, so filling one is a pass you make rather than a wait you sit
+   * out. Held against the ground without moving, the bucket stays empty.
+   */
+  digRate: number;
+  /** m³/s that leaves the bucket once it is tipped past `dumpCurl`. */
+  dumpRate: number;
+  /**
+   * Curl angle below which the bucket is open and spills, radians.
+   *
+   * The single control that makes an excavator cycle read as a cycle: curl in
+   * to hold what you have dug, swing, tip out. Without it "dump" is a button
+   * rather than a thing the machine is visibly doing.
+   */
+  dumpCurl: number;
+}
+
+export type ImplementSpec = BladeSpec | CraneSpec | ExcavatorSpec;
 
 export interface BladeState {
   kind: 'blade';
@@ -254,7 +309,31 @@ export interface CraneState {
   hookedPayloadId: string | null;
 }
 
-export type ImplementState = BladeState | CraneState;
+export interface ExcavatorState {
+  kind: 'excavator';
+  slew: number;
+  boom: number;
+  stick: number;
+  curl: number;
+
+  /** Bucket teeth, world space. Derived every step; the view reads it. */
+  teeth: Vec3;
+  /** Horizontal distance from the slew centre to the teeth, metres. */
+  radius: number;
+  /** Ground height directly under the teeth. What "how deep am I" is measured from. */
+  groundAtTeeth: number;
+
+  /** m³ currently in the bucket. */
+  carried: number;
+  /** m³/s going in (positive) or coming out (negative). Diagnostic. */
+  flowRate: number;
+  /** True while the teeth are up against something they cannot cut. */
+  blocked: boolean;
+  /** True while the bucket is tipped open. */
+  dumping: boolean;
+}
+
+export type ImplementState = BladeState | CraneState | ExcavatorState;
 
 // ----------------------------------------------------------------- vehicle
 

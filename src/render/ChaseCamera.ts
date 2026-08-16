@@ -21,7 +21,7 @@
 import * as THREE from 'three';
 import type { Vec3 } from '../sim/math/Vec';
 
-export type CameraMode = 'chase' | 'fixed' | 'cab' | 'top';
+export type CameraMode = 'chase' | 'fixed';
 
 interface View {
   label: string;
@@ -31,26 +31,23 @@ interface View {
   pitch: number;
   /** Metres the machine may stray before the camera gives up and follows. */
   leash: number;
-  /** How far ahead of the machine to aim, metres. The blade is not the cab. */
-  focusAhead: number;
 }
 
 /**
  * The cycle, in order.
  *
- * Deliberately a list rather than a pair: the ask was to toggle BETWEEN views,
- * and a boolean can only ever hold two. Adding one is a line here.
+ * Two, down from four. `cab` and `top` were both reachable framings of `chase`
+ * rather than different ideas — the wheel gets you to either in a second, and
+ * each view remembers its own zoom — so all they really added was two extra
+ * presses between the two views that ARE different: one that follows you and
+ * one that stands still. Adding a third is a line here if a real one turns up.
  */
 const VIEWS: Record<CameraMode, View> = {
-  chase: { label: 'Chase · follows', frame: 'heading', distance: 16, pitch: 0.44, leash: 0, focusAhead: 0 },
-  fixed: { label: 'Fixed · locked', frame: 'world', distance: 34, pitch: 0.3, leash: 12, focusAhead: 0 },
-  // Named for the framing, not for the blade: the same view on a crane is the
-  // one you use to watch a load land, and there is no blade anywhere near it.
-  cab: { label: 'Cab · close in', frame: 'heading', distance: 11, pitch: 0.66, leash: 0, focusAhead: 3.2 },
-  top: { label: 'Top · reads grade', frame: 'heading', distance: 30, pitch: 1.15, leash: 0, focusAhead: 0 },
+  chase: { label: 'Chase · follows', frame: 'heading', distance: 16, pitch: 0.44, leash: 0 },
+  fixed: { label: 'Fixed · locked', frame: 'world', distance: 34, pitch: 0.3, leash: 12 },
 };
 
-const ORDER: readonly CameraMode[] = ['chase', 'fixed', 'cab', 'top'];
+const ORDER: readonly CameraMode[] = ['chase', 'fixed'];
 
 /** Frame-rate independent exponential smoothing. */
 function damp(current: number, target: number, lambda: number, dt: number): number {
@@ -88,9 +85,29 @@ export interface CameraFraming {
   scale: number;
   /** Where the camera looks, metres above the machine's ground line. */
   eyeHeight: number;
+  /**
+   * How far to shift the aim from the machine toward its WORK, 0..1.
+   *
+   * A dozer's work is under its own nose, so zero is right and the machine is
+   * the subject. A crane's work is twenty metres away on the end of a rope,
+   * and aiming at the machine framed the crawlers — the least interesting part
+   * of it — while the load was off in the corner. Only the aim moves; the
+   * camera still ORBITS the machine, or reaching out would drag it in.
+   */
+  workAim: number;
+  /**
+   * Resting yaw offset for the chase view, radians. Where "behind" actually is.
+   *
+   * Zero is behind the machine, which is right for a dozer pushing a blade it
+   * looks over. It is wrong for an excavator: the camera ends up staring
+   * straight down the boom, so the arm covers the exact patch of ground being
+   * cut and there is no way to judge depth. Standing off the operator's
+   * shoulder puts the whole arm across the frame and the cut in clear view.
+   */
+  shoulder?: number;
 }
 
-const DEFAULT_FRAMING: CameraFraming = { scale: 1, eyeHeight: 1.7 };
+const DEFAULT_FRAMING: CameraFraming = { scale: 1, eyeHeight: 1.7, workAim: 0 };
 
 export class ChaseCamera {
   readonly camera: THREE.PerspectiveCamera;
@@ -99,8 +116,8 @@ export class ChaseCamera {
 
   private mode_: CameraMode = 'chase';
 
-  /** Heading-framed views: yaw relative to the machine. */
-  private yawOffset = 0;
+  /** Heading-framed views: yaw relative to the machine. Rests at `shoulder`. */
+  private yawOffset: number;
   /** World-framed views: yaw relative to the world, which is what stands still. */
   private worldYaw = 0;
 
@@ -137,6 +154,7 @@ export class ChaseCamera {
   constructor(domElement: HTMLElement, aspect = 1, framing: CameraFraming = DEFAULT_FRAMING) {
     this.domElement = domElement;
     this.framingSpec = framing;
+    this.yawOffset = framing.shoulder ?? 0;
     this.camera = new THREE.PerspectiveCamera(58, aspect, 0.3, 2000);
 
     this.framing = Object.fromEntries(
@@ -200,8 +218,16 @@ export class ChaseCamera {
   update(
     dt: number,
     position: Vec3,
+    /**
+     * Which way the machine is FACING, which is not always its heading. On a
+     * crane it is the house: staying behind the tracks while the operator
+     * slews the superstructure round leaves the camera watching the back of a
+     * machine that is working the other way.
+     */
     heading: number,
     groundHeightAt: (x: number, z: number) => number,
+    /** Where the machine is working — the hook, the blade. Null if nowhere. */
+    work: Vec3 | null = null,
   ): void {
     this.lastHeading = heading;
     const view = VIEWS[this.mode_];
@@ -212,13 +238,15 @@ export class ChaseCamera {
     const focusX = position.x;
     const focusY = position.y + this.framingSpec.eyeHeight;
     const focusZ = position.z;
-    // And, for views that ask for it, aim ahead at the work rather than the machine.
-    const aimX = focusX + Math.sin(heading) * view.focusAhead;
-    const aimZ = focusZ + Math.cos(heading) * view.focusAhead;
+
+    const k = work ? this.framingSpec.workAim : 0;
+    const aimX = work ? focusX + (work.x - focusX) * k : focusX;
+    const aimY = work ? focusY + (work.y - focusY) * k : focusY;
+    const aimZ = work ? focusZ + (work.z - focusZ) * k : focusZ;
 
     if (!this.initialised) {
       this.focus.set(focusX, focusY, focusZ);
-      this.lookAt.set(aimX, focusY, aimZ);
+      this.lookAt.set(aimX, aimY, aimZ);
       this.anchor.copy(this.focus);
       this.initialised = true;
     } else {
@@ -229,7 +257,7 @@ export class ChaseCamera {
       );
       this.lookAt.set(
         damp(this.lookAt.x, aimX, 9, dt),
-        damp(this.lookAt.y, focusY, 5, dt),
+        damp(this.lookAt.y, aimY, 5, dt),
         damp(this.lookAt.z, aimZ, 9, dt),
       );
     }
@@ -241,9 +269,10 @@ export class ChaseCamera {
       pivot = this.updateAnchor(dt, view.leash, groundHeightAt);
     } else {
       if (this.recentering) {
-        this.yawOffset = damp(this.yawOffset, 0, RECENTER_RATE, dt);
-        if (Math.abs(this.yawOffset) < 0.002) {
-          this.yawOffset = 0;
+        const rest = this.framingSpec.shoulder ?? 0;
+        this.yawOffset = damp(this.yawOffset, rest, RECENTER_RATE, dt);
+        if (Math.abs(this.yawOffset - rest) < 0.002) {
+          this.yawOffset = rest;
           this.recentering = false;
         }
       }

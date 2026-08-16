@@ -32,8 +32,18 @@ const ratedAt = (radius: number): number =>
 const MIN_RADIUS = SPEC.pivot.z + SPEC.boomLength * Math.cos(SPEC.luff.max);
 const MAX_RADIUS = SPEC.pivot.z + SPEC.boomLength * Math.cos(SPEC.luff.min);
 
-const content = liftYardMap.populate?.();
-if (!content) throw new Error('the lift yard must populate loads and pads');
+const CONTRACTS = liftYardMap.liftContracts ?? [];
+if (CONTRACTS.length === 0) throw new Error('the lift yard must offer at least one contract');
+
+/**
+ * Everything the yard has to stand under, across every contract.
+ *
+ * The winnability checks below run over ALL of them. A second contract that
+ * puts a pad half a metre past the chart looks exactly like a first contract
+ * that does not, right up until someone plays it for four minutes.
+ */
+const ALL_PAYLOADS = CONTRACTS.flatMap((c) => c.payloads);
+const ALL_TARGETS = CONTRACTS.flatMap((c) => c.targets);
 
 describe('the yard itself', () => {
   it('produces finite heights everywhere', () => {
@@ -51,17 +61,17 @@ describe('the yard itself', () => {
     const t = build();
     // The boom kinematics assume the machine is standing level. Any slope
     // inside the working area is the map quietly breaking that assumption.
-    for (const load of content.payloads) {
+    for (const load of ALL_PAYLOADS) {
       expect(Math.abs(t.sampleHeight(load.x, load.z))).toBeLessThan(0.01);
     }
-    for (const target of content.liftTargets) {
+    for (const target of ALL_TARGETS) {
       expect(Math.abs(t.sampleHeight(target.x, target.z))).toBeLessThan(0.01);
     }
   });
 
   it('is hardstand under the loads and the pads, so nothing can be dug', () => {
     const t = build();
-    for (const p of [...content.payloads, ...content.liftTargets]) {
+    for (const p of [...ALL_PAYLOADS, ...ALL_TARGETS]) {
       expect(t.sampleMaterial(p.x, p.z)).toBe(MaterialId.ROCK);
     }
   });
@@ -71,7 +81,7 @@ describe('the yard itself', () => {
     const { x, z } = liftYardMap.spawn.position;
     expect(Math.abs(t.sampleHeight(x, z))).toBeLessThan(0.01);
 
-    for (const load of content.payloads) {
+    for (const load of ALL_PAYLOADS) {
       expect(Math.hypot(load.x - x, load.z - z)).toBeGreaterThan(6);
     }
   });
@@ -94,17 +104,17 @@ describe('the yard itself', () => {
 
 describe('every load can be lifted, and every pad can be filled', () => {
   it('pairs each pad with a load of the kind it accepts', () => {
-    for (const target of content.liftTargets) {
-      const matching = content.payloads.filter((p) => p.kind === target.accepts);
+    for (const target of ALL_TARGETS) {
+      const matching = ALL_PAYLOADS.filter((p) => p.kind === target.accepts);
       expect(matching.length).toBeGreaterThan(0);
     }
     // And there are exactly as many loads as places to put them, so the job
     // has no spare — every load on the yard is one you have to move.
-    expect(content.payloads.length).toBe(content.liftTargets.length);
+    expect(ALL_PAYLOADS.length).toBe(ALL_TARGETS.length);
   });
 
   it('leaves no load too heavy to lift at any radius the boom has', () => {
-    for (const load of content.payloads) {
+    for (const load of ALL_PAYLOADS) {
       expect(load.mass).toBeLessThanOrEqual(ratedAt(MIN_RADIUS));
     }
   });
@@ -131,8 +141,8 @@ describe('every load can be lifted, and every pad can be filled', () => {
   }
 
   it('has somewhere to park to pick each load up, and somewhere to set it down', () => {
-    for (const load of content.payloads) {
-      const pad = content.liftTargets.find((t) => t.accepts === load.kind);
+    for (const load of ALL_PAYLOADS) {
+      const pad = ALL_TARGETS.find((t) => t.accepts === load.kind);
       expect(pad, `nothing accepts a ${load.kind}`).toBeDefined();
       if (!pad) continue;
 
@@ -161,8 +171,8 @@ describe('every load can be lifted, and every pad can be filled', () => {
   }
 
   it('opens with lifts you can do standing still and closes with ones you cannot', () => {
-    const oneStance = content.payloads.map((load) => {
-      const pad = content.liftTargets.find((t) => t.accepts === load.kind);
+    const oneStance = ALL_PAYLOADS.map((load) => {
+      const pad = ALL_TARGETS.find((t) => t.accepts === load.kind);
       return pad ? servedByOneStance(load, pad) : false;
     });
 

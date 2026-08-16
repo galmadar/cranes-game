@@ -9,7 +9,7 @@
 
 import type { JobSite } from '../sim/job/JobSite';
 import { DEFAULT_TUNING, TUNING } from '../sim/tuning';
-import type { BladeSpec, CraneSpec, VehicleDefinition } from '../sim/vehicle/types';
+import type { BladeSpec, CraneSpec, ExcavatorSpec, VehicleDefinition } from '../sim/vehicle/types';
 
 export interface SettingDef {
   id: string;
@@ -48,10 +48,15 @@ function craneOf(def: VehicleDefinition): CraneSpec | undefined {
   return def.implements.find((i): i is CraneSpec => i.kind === 'crane');
 }
 
+function armOf(def: VehicleDefinition): ExcavatorSpec | undefined {
+  return def.implements.find((i): i is ExcavatorSpec => i.kind === 'excavator');
+}
+
 export function buildSettings(def: VehicleDefinition, site?: JobSite): SettingGroup[] {
   const loco = def.locomotion;
   const blade = bladeOf(def);
   const crane = craneOf(def);
+  const arm = armOf(def);
 
   /**
    * Namespace a setting to the machine that owns it.
@@ -136,6 +141,29 @@ export function buildSettings(def: VehicleDefinition, site?: JobSite): SettingGr
         num('swayDamping', 'Sway damping', 0.02, 1, 0.01, '', TUNING, DEFAULT_TUNING, 'swayDamping', 'How fast a swinging load settles. Low is realistic and cruel'),
         adv(num('maxSwingFraction', 'Swing limit', 0.1, 0.9, 0.05, '', TUNING, DEFAULT_TUNING, 'maxSwingFraction', 'Furthest the hook may swing, as a share of rope out')),
         adv(num(own('craneTurnSpeed'), 'Tag line speed', 0.05, 3, 0.05, 'rad/s', crane.turn, turnDefaults, 'speed', 'How fast Z and X turn the load on the hook')),
+      ],
+    });
+  }
+
+  if (arm) {
+    const armDefaults = { ...arm };
+    const armSlewDefaults = { ...arm.slew };
+    const boomDefaults = { ...arm.boom };
+    const stickDefaults = { ...arm.stick };
+    const curlDefaults = { ...arm.curl };
+
+    groups.push({
+      title: 'Arm',
+      settings: [
+        num(own('armCapacity'), 'Bucket', 0.2, 5, 0.05, 'm³', arm, armDefaults, 'capacity', 'How much it holds before it stops filling'),
+        num(own('armDigRate'), 'Dig rate', 0.2, 4, 0.05, 'm³/m', arm, armDefaults, 'digRate', 'Soil picked up per metre the teeth are dragged'),
+        num(own('armSlewSpeed'), 'Slew speed', 0.1, 3, 0.05, 'rad/s', arm.slew, armSlewDefaults, 'speed'),
+        num(own('armStickSpeed'), 'Stick speed', 0.1, 3, 0.05, 'rad/s', arm.stick, stickDefaults, 'speed', 'The joint you drag a cut with'),
+        adv(num(own('armBoomSpeed'), 'Boom speed', 0.1, 3, 0.05, 'rad/s', arm.boom, boomDefaults, 'speed')),
+        adv(num(own('armCurlSpeed'), 'Curl speed', 0.1, 4, 0.05, 'rad/s', arm.curl, curlDefaults, 'speed')),
+        adv(num(own('armDumpRate'), 'Dump rate', 0.5, 15, 0.5, 'm³/s', arm, armDefaults, 'dumpRate')),
+        adv(num(own('armBoomMin'), 'Lowest boom', -1.2, 0, 0.05, 'rad', arm.boom, boomDefaults, 'min', 'How far below horizontal it reaches — this is dig depth')),
+        adv(num(own('armDumpCurl'), 'Tip point', -0.6, 0.4, 0.05, 'rad', arm, armDefaults, 'dumpCurl', 'Curl below this and the bucket spills')),
       ],
     });
   }

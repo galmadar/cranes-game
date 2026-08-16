@@ -37,12 +37,22 @@ describe('ChaseCamera modes', () => {
     expect(cam.mode).toBe('chase');
   });
 
+  // Deliberately does not say HOW MANY views there are — that number is a
+  // design decision that has already changed once, and a test that pins it
+  // only ever reports that someone changed their mind on purpose.
   it('cycles through every view and back to the start', () => {
     const cam = new ChaseCamera(stubElement());
-    const seen = [cam.mode];
-    for (let i = 0; i < 3; i++) seen.push(cam.cycleMode());
-    expect(new Set(seen).size).toBe(4);
-    expect(cam.cycleMode()).toBe('chase');
+    const start = cam.mode;
+    const seen = new Set([start]);
+
+    let steps = 0;
+    while (cam.cycleMode() !== start) {
+      seen.add(cam.mode);
+      if (++steps > 20) throw new Error('cycleMode never returned to the first view');
+    }
+
+    expect(seen.size).toBeGreaterThan(1);
+    expect(cam.mode).toBe(start);
   });
 
   it('switching views keeps the bearing, so the player never gets spun round', () => {

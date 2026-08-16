@@ -16,6 +16,8 @@ import { bulldozerDef, BULLDOZER_CONTROL_HINTS } from './bulldozer.def';
 import { buildBulldozer } from './bulldozer.view';
 import { crawlerCraneDef, CRAWLER_CRANE_CONTROL_HINTS } from './crawlerCrane.def';
 import { buildCrawlerCrane } from './crawlerCrane.view';
+import { excavatorDef, EXCAVATOR_CONTROL_HINTS } from './excavator.def';
+import { buildExcavator } from './excavator.view';
 
 export interface VehicleEntry {
   readonly def: VehicleDefinition;
@@ -45,9 +47,25 @@ export const VEHICLES: readonly VehicleEntry[] = [
       'Rated load falls as you reach out — park close for the heavy ones. ' +
       'Slew (Q/E) puts the load over the pad; the tag line (Z/X) turns it to lie ' +
       'the right way. Wait for Swing to read steady before you set it down.',
-    // Stand well back and look at the middle of the boom, not at the tracks.
-    // A 22 m boom framed like a dozer is a machine you watch from the ankles.
-    camera: { scale: 2.4, eyeHeight: 9 },
+    // Stand well back, look high, and lean the aim toward the hook. A 22 m
+    // boom framed like a dozer is a machine you watch from the ankles.
+    // `eyeHeight` was 9 to drag the boom into frame on its own. It does not
+    // have to any more — leaning the aim toward the hook lifts the shot when
+    // the hook is high and drops it when a load is going down onto a pad,
+    // which is the same job done by the thing you are actually looking at.
+    camera: { scale: 2.4, eyeHeight: 5.5, workAim: 0.45 },
+  },
+  {
+    def: excavatorDef,
+    view: buildExcavator,
+    hints: EXCAVATOR_CONTROL_HINTS,
+    tip:
+      'The cycle is boom down (F), stick in to drag the cut (T), curl in to hold it ' +
+      '(Z), slew (Q/E), curl out to tip (X). Spoil heaped on the lip runs back in.',
+    // Closer than the crane and aimed at the teeth: the work is a metre and a
+    // half down a hole, and that is the only part worth looking at. Stood off
+    // the shoulder, because dead astern the boom hides exactly that.
+    camera: { scale: 1.35, eyeHeight: 3, workAim: 0.55, shoulder: 0.72 },
   },
 ];
 
