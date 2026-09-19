@@ -13,7 +13,7 @@
  */
 
 import { getMap, MAPS, DEFAULT_MAP_ID } from './content/maps/registry';
-import { getVehicle, DEFAULT_VEHICLE_ID } from './content/vehicles/registry';
+import { getVehicle, DEFAULT_VEHICLE_ID } from './content/vehicles/registry.view';
 import { Keyboard } from './input/Keyboard';
 import { Renderer } from './render/Renderer';
 import { JobRunner } from './sim/job/JobRunner';

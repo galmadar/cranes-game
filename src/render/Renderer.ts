@@ -6,7 +6,7 @@
  */
 
 import * as THREE from 'three';
-import { getVehicle } from '../content/vehicles/registry';
+import { getVehicle } from '../content/vehicles/registry.view';
 import type { World } from '../sim/World';
 import { ChaseCamera } from './ChaseCamera';
 import { DustSystem } from './DustSystem';

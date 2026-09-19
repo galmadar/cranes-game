@@ -7,6 +7,8 @@
  * M5 tests exactly that claim by adding an excavator. If it can't be done
  * without touching engine code, this design failed and the time to find out
  * is with two vehicles, not six.
+ *
+ * `.view.ts` because it pulls in the meshes, so the purity check treats it as drawing code.
  */
 
 import type { VehicleDefinition } from '../../sim/vehicle/types';
