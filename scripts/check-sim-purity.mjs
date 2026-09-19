@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Enforces NFR-1: `src/sim/` must not depend on the renderer, the DOM, or any
- * layer above it.
+ * Enforces NFR-1: `src/sim/` and `src/content/` must not depend on the renderer,
+ * the DOM, or any layer above them. `*.view.ts` files in content are the
+ * drawing layer and are exempt; nothing pure may import them.
  *
  * This is the single architectural rule that keeps the renderer swappable and
  * the simulation headlessly testable. Rules that are only written down get
@@ -11,7 +12,7 @@
  * different things from different depths, and a regex cannot tell the pure
  * `src/sim/input/actions` apart from the DOM adapter in `src/input/`.
  *
- * Test files are scanned for renderer/DOM leakage but are allowed to import
+ * Sim test files are scanned for renderer/DOM leakage but are allowed to import
  * content: exercising the real bulldozer definition is the point of the test,
  * and test code never ships.
  */
@@ -22,6 +23,9 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 const ROOT = process.cwd();
 const SRC = join(ROOT, 'src');
 const SIM = join(SRC, 'sim');
+const CONTENT = join(SRC, 'content');
+// Meshes live beside their defs in content; the view files are drawing code by design.
+const isView = (path) => /\.view(\.ts)?$/.test(path);
 
 const FORBIDDEN_PACKAGES = [{ test: (s) => s === 'three' || s.startsWith('three/'), why: 'three.js' }];
 
@@ -43,7 +47,7 @@ function walk(dir) {
 
 /** Every import/export specifier in a source file, with its line number. */
 function* specifiers(source) {
-  const re = /(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g;
+  const re = /(?:from|import|require)\s*\(?\s*['"]([^'"]+)['"]/g;
   const lines = source.split('\n');
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -59,9 +63,9 @@ function* specifiers(source) {
 
 let files;
 try {
-  files = walk(SIM);
+  files = [...walk(SIM), ...walk(CONTENT).filter((f) => !isView(f))];
 } catch {
-  console.error(`sim purity: cannot read ${SIM}`);
+  console.error(`sim purity: cannot read ${SIM} and ${CONTENT}`);
   process.exit(1);
 }
 
@@ -69,6 +73,7 @@ const violations = [];
 
 for (const file of files) {
   const isTest = file.endsWith('.test.ts');
+  const inContent = file.startsWith(CONTENT + sep);
   const source = readFileSync(file, 'utf8');
   const where = relative(ROOT, file);
 
@@ -82,13 +87,17 @@ for (const file of files) {
     if (!specifier.startsWith('.')) continue;
 
     const target = resolve(dirname(file), specifier);
-    if (target.startsWith(SIM + sep)) continue; // inside sim — fine
+    if (isView(target)) {
+      violations.push({ where, line, why: 'imports a .view file (drawing code)', text });
+      continue;
+    }
+    if (target.startsWith(SIM + sep)) continue; // sim is pure — anyone may use it
+    // Content may use content; sim tests may reach into it for fixtures.
+    if (target.startsWith(CONTENT + sep) && (inContent || isTest)) continue;
 
-    // Escapes sim. Tests may reach into content for fixtures; nothing else may.
     const rel = relative(SRC, target).split(sep)[0];
-    if (isTest && rel === 'content') continue;
-
-    violations.push({ where, line, why: `imports from ${rel}/ — outside sim`, text });
+    const home = inContent ? 'content' : 'sim';
+    violations.push({ where, line, why: `imports from ${rel}/ — outside ${home}`, text });
   }
 
   if (isTest) continue;
@@ -108,8 +117,8 @@ if (violations.length > 0) {
     console.error(`  ${v.where}:${v.line} — ${v.why}`);
     console.error(`    ${v.text}\n`);
   }
-  console.error('  src/sim must stay pure: no renderer, no DOM, no upward imports.\n');
+  console.error('  src/sim and src/content (except *.view.ts) must stay pure: no renderer, no DOM, no upward imports.\n');
   process.exit(1);
 }
 
-console.log(`sim purity OK — ${files.length} files in src/sim, no forbidden dependencies`);
+console.log(`sim purity OK — ${files.length} files in src/sim + src/content (views excluded), no forbidden dependencies`);

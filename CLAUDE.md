@@ -20,9 +20,11 @@ in plain words.
 
 See `PLAN.md` for the full design and the reasoning behind it.
 
-`src/sim/` must never import `three`, touch the DOM, or import from outside
-`src/sim/` (tests may pull in `src/content/`). `npm test` fails if it does.
-`src/content/` isn't checked, and its `*.view.ts` files do import `three`.
+`src/sim/` and `src/content/` must never import `three`, touch the DOM, or
+import render code (`render/`, `input/`, `shell/`, or any `*.view.ts`). `sim`
+imports only `sim` (its tests may pull in `content`); `content` imports `sim`
+and `content`. `*.view.ts` files are the drawing layer and are exempt.
+`npm test` fails on any breach (`scripts/check-sim-purity.mjs`).
 
 # Shipping
 
